@@ -1,0 +1,14 @@
+# Python 暫存
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# 環境變數
+.env
+
+# 作業系統檔案
+.DS_Store
+Thumbs.db
