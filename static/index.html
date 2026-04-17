@@ -88,7 +88,7 @@
             list.innerHTML = "<p class='text-gray-400'>載入中...</p>";
 
             try {
-                // 同時抓取錯題狀態、題組與紀錄
+                // 同時抓取錯題狀態、題組與紀錄 (加入時間戳記防快取)
                 const [wrongRes, setsRes, recordRes] = await Promise.all([
                     fetch(`/users/${currentUid}/has_wrong`),
                     fetch(`/users/${currentUid}/sets`),
@@ -114,7 +114,7 @@
                     `;
                 }
 
-                // 顯示一般題組
+                // 顯示一般題組 (包含刪除按鈕)
                 if (sets.length === 0 && !has_wrong) {
                     list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
                 } else {
@@ -122,7 +122,10 @@
                         list.innerHTML += `
                             <li class="p-4 border border-emerald-200 rounded flex justify-between items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm">
                                 <span class="font-bold text-lg">${set.name}</span>
-                                <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold">開始練習</button>
+                                <div class="flex gap-2">
+                                    <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold">開始練習</button>
+                                    <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-2 rounded hover:bg-red-500 hover:text-white transition font-bold">刪除</button>
+                                </div>
                             </li>
                         `;
                     });
@@ -166,44 +169,62 @@
             window.location.href = url;
         }
 
-        // 5. 上傳 CSV (無彈窗優化版)
-async function uploadCSV() {
-    const currentUid = localStorage.getItem('user_id');
-    const name = document.getElementById('set-name').value;
-    const fileInput = document.getElementById('csv-file');
-    const file = fileInput.files[0];
-    if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
+        // 5. 上傳 CSV (優化版)
+        async function uploadCSV() {
+            const currentUid = localStorage.getItem('user_id');
+            const name = document.getElementById('set-name').value;
+            const fileInput = document.getElementById('csv-file');
+            const file = fileInput.files[0];
+            if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
 
-    // 抓取按鈕並改變狀態
-    const btn = document.querySelector('button[onclick="uploadCSV()"]');
-    btn.innerText = "🚀 正在上傳與處理中...請稍候";
-    btn.disabled = true;
-    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
-    btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+            const btn = document.querySelector('button[onclick="uploadCSV()"]');
+            btn.innerText = "🚀 正在上傳與處理中...請稍候";
+            btn.disabled = true;
+            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
 
-    const fd = new FormData();
-    fd.append('set_name', name);
-    fd.append('file', file);
+            const fd = new FormData();
+            fd.append('set_name', name);
+            fd.append('file', file);
 
-    try {
-        const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
-        const data = await res.json();
-        
-        if (res.ok && data.status === 'success') {
-            location.reload(); // 上傳成功，自動重整頁面
-        } else {
-            alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
+            try {
+                const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
+                const data = await res.json();
+                
+                if (res.ok && data.status === 'success') {
+                    location.reload(); 
+                } else {
+                    alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
+                }
+            } catch (err) {
+                alert("網路連線發生錯誤，請確認伺服器是否運行中。");
+            } finally {
+                btn.innerText = "上傳並開始分析例句";
+                btn.disabled = false;
+                btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+            }
         }
-    } catch (err) {
-        alert("網路連線發生錯誤，請確認伺服器是否運行中。");
-    } finally {
-        // 恢復按鈕狀態
-        btn.innerText = "上傳並開始分析例句";
-        btn.disabled = false;
-        btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-        btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
-    }
-}
+
+        // 6. 刪除題組
+        async function deleteSet(setId) {
+            if (!confirm("⚠️ 確定要刪除這個題組嗎？\n刪除後，裡面的單字與相關的錯題紀錄都會一併消失喔！")) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/sets/${setId}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (res.ok && data.status === 'success') {
+                    showDashboard(); 
+                } else {
+                    alert("刪除失敗：" + (data.message || "未知錯誤"));
+                }
+            } catch (err) {
+                alert("網路連線發生錯誤，請確認伺服器是否運行中。");
+            }
+        }
 
         // 初始化執行
         checkLogin();

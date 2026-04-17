@@ -119,5 +119,25 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
         print(f"上傳發生錯誤: {e}") # 會印在終端機裡
         return {"status": "error", "message": str(e)}
 
+@app.delete("/sets/{set_id}")
+def delete_set(set_id: int, dbs: Session = Depends(get_db)):
+    # 1. 尋找指定的題組
+    word_set = dbs.query(db.WordSet).filter(db.WordSet.id == set_id).first()
+    if not word_set:
+        return {"status": "error", "message": "找不到題組"}
+    
+    # 2. 安全機制：找出這個題組裡的所有單字，並先刪除與它們相關的「錯題紀錄」
+    words = dbs.query(db.Word).filter(db.Word.word_set_id == set_id).all()
+    word_ids = [w.id for w in words]
+    if word_ids:
+        # synchronize_session=False 可以讓大量刪除的效能更好
+        dbs.query(db.WrongAnswer).filter(db.WrongAnswer.word_id.in_(word_ids)).delete(synchronize_session=False)
+    
+    # 3. 刪除題組 (因為我們在 database.py 有設定 cascade，裡面的單字也會跟著自動刪除)
+    dbs.delete(word_set)
+    dbs.commit()
+    return {"status": "success"}
+
+
 @app.get("/")
 def read_index(): return FileResponse("static/index.html")
