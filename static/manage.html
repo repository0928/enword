@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新增題組</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6">
+    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-8 mt-10">
+        <a href="/static/index.html" class="text-emerald-600 underline mb-4 inline-block">← 返回首頁</a>
+        <h2 class="text-2xl font-bold text-emerald-600 mb-6">➕ 匯入新題組 (CSV)</h2>
+        
+        <input type="text" id="set-name" placeholder="輸入題組名稱 (例如：第一課單字)" class="w-full p-3 border border-emerald-300 rounded mb-4 text-lg">
+        <input type="file" id="csv-file" accept=".csv" class="w-full p-3 border border-emerald-300 rounded mb-6">
+        
+        <button onclick="uploadCsv()" class="w-full bg-emerald-600 text-white font-bold py-3 rounded hover:bg-emerald-700" id="upload-btn">上傳並自動抓取例句</button>
+        <p id="status-msg" class="text-center mt-4 text-sm text-gray-600"></p>
+    </div>
+
+    <script>
+        async function uploadCsv() {
+            const userId = localStorage.getItem('user_id');
+            const setName = document.getElementById('set-name').value;
+            const fileInput = document.getElementById('csv-file');
+            
+            if (!userId) return alert("請先登入！");
+            if (!setName || fileInput.files.length === 0) return alert("請填寫名稱並選擇檔案！");
+
+            const formData = new FormData();
+            formData.append('set_name', setName);
+            formData.append('file', fileInput.files[0]);
+
+            const btn = document.getElementById('upload-btn');
+            const msg = document.getElementById('status-msg');
+            btn.disabled = true;
+            btn.innerText = "上傳中...(正在查字典找例句)";
+            msg.innerText = "請稍候，這可能需要幾秒鐘...";
+
+            try {
+                const res = await fetch(`/upload_csv/${userId}`, { method: 'POST', body: formData });
+                if (res.ok) {
+                    alert("上傳成功！");
+                    window.location.href = "/static/index.html";
+                } else {
+                    alert("上傳失敗");
+                }
+            } catch (err) {
+                alert("發生錯誤");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "上傳並自動抓取例句";
+                msg.innerText = "";
+            }
+        }
+    </script>
+</body>
+</html>

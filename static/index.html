@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>國中英文單字練習系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6">
+
+    <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-8">
+        <h1 class="text-3xl font-bold text-emerald-700 mb-6 text-center">📖 國中英文單字練習</h1>
+
+        <div id="login-section" class="mb-8 p-6 border-2 border-emerald-100 rounded-lg">
+            <h2 class="text-xl font-bold mb-4">學生登入</h2>
+            <div class="flex gap-2">
+                <input type="text" id="username" placeholder="輸入你的姓名" class="flex-1 p-2 border rounded focus:outline-emerald-500">
+                <button onclick="login()" class="bg-emerald-600 text-white px-6 py-2 rounded font-bold hover:bg-emerald-700">登入</button>
+            </div>
+        </div>
+
+        <div id="dashboard" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <p class="text-lg">你好，<span id="user-display" class="font-bold text-emerald-700"></span>！</p>
+                <button onclick="logout()" class="text-sm text-gray-500 underline">登出</button>
+            </div>
+
+            <div class="mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="font-bold mb-2">➕ 新增題組 (上傳 CSV)</h3>
+                <div class="flex flex-col gap-2">
+                    <input type="text" id="set-name" placeholder="題組名稱 (如：L1 單字)" class="p-2 border rounded">
+                    <input type="file" id="csv-file" accept=".csv" class="text-sm">
+                    <button onclick="uploadCSV()" class="bg-emerald-500 text-white py-2 rounded font-bold hover:bg-emerald-600">上傳並開始分析例句</button>
+                </div>
+            </div>
+
+            <h3 class="font-bold mb-4">📚 我的題組</h3>
+            <ul id="sets-list" class="space-y-3">
+                </ul>
+
+            <h3 class="font-bold mt-8 mb-4 border-t pt-4">📊 最近練習紀錄</h3>
+            <ul id="records-list" class="text-sm space-y-2 text-gray-600">
+                </ul>
+        </div>
+    </div>
+
+    <script>
+        // 1. 登入邏輯
+        async function login() {
+            const name = document.getElementById('username').value.trim();
+            if (!name) return alert("請輸入姓名");
+            
+            const fd = new FormData();
+            fd.append('username', name);
+            try {
+                const res = await fetch('/login', { method: 'POST', body: fd });
+                const data = await res.json();
+                localStorage.setItem('user_id', data.user_id);
+                localStorage.setItem('username', data.username);
+                checkLogin();
+            } catch (err) {
+                console.error("Login failed:", err);
+            }
+        }
+
+        function logout() {
+            localStorage.clear();
+            location.reload();
+        }
+
+        // 2. 檢查登入狀態
+        async function checkLogin() {
+            const currentUid = localStorage.getItem('user_id');
+            if (currentUid) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('user-display').innerText = localStorage.getItem('username');
+                await showDashboard();
+            }
+        }
+
+        // 3. 顯示控制台
+        async function showDashboard() {
+            const currentUid = localStorage.getItem('user_id');
+            const list = document.getElementById('sets-list');
+            const rList = document.getElementById('records-list');
+            
+            list.innerHTML = "<p class='text-gray-400'>載入中...</p>";
+
+            try {
+                // 同時抓取錯題狀態、題組與紀錄
+                const [wrongRes, setsRes, recordRes] = await Promise.all([
+                    fetch(`/users/${currentUid}/has_wrong`),
+                    fetch(`/users/${currentUid}/sets`),
+                    fetch(`/records/${currentUid}?t=${new Date().getTime()}`)
+                ]);
+
+                const { has_wrong } = await wrongRes.json();
+                const sets = await setsRes.json();
+                const records = await recordRes.json();
+
+                list.innerHTML = ""; // 清空
+
+                // 顯示錯題本
+                if (has_wrong) {
+                    list.innerHTML += `
+                        <li class="p-4 border-2 border-red-200 rounded flex justify-between items-center bg-red-50 mb-4 shadow-sm">
+                            <div>
+                                <span class="font-bold text-lg text-red-700">❌ 我的錯題本</span>
+                                <p class="text-xs text-red-500">這裡收集了你答錯的單字</p>
+                            </div>
+                            <button onclick="startPractice(null, 'wrong')" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 font-bold">進入練習</button>
+                        </li>
+                    `;
+                }
+
+                // 顯示一般題組
+                if (sets.length === 0 && !has_wrong) {
+                    list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
+                } else {
+                    sets.forEach(set => {
+                        list.innerHTML += `
+                            <li class="p-4 border border-emerald-200 rounded flex justify-between items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm">
+                                <span class="font-bold text-lg">${set.name}</span>
+                                <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold">開始練習</button>
+                            </li>
+                        `;
+                    });
+                }
+
+                // 顯示紀錄
+                rList.innerHTML = records.length ? "" : "<li>暫無紀錄</li>";
+                records.forEach(r => {
+                    rList.innerHTML += `
+                        <li class="p-2 bg-white border-b flex justify-between items-center">
+                            <span class="text-xs text-gray-400">📅 ${r.created_at}</span>
+                            <span class="font-medium text-gray-700">${r.set_name}</span>
+                            <span class="font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">${r.score}</span>
+                        </li>
+                    `;
+                });
+
+            } catch (err) {
+                console.error("Load dashboard failed:", err);
+                list.innerHTML = "<p class='text-red-500'>載入資料失敗，請重新整理。</p>";
+            }
+        }
+
+        // 4. 啟動練習
+        function startPractice(setId, mode) {
+            let count = prompt("請輸入要練習的題數 (輸入 'all' 為全部練習，或至少輸入 5)：", "all");
+            if (count === null) return;
+            
+            if (count !== 'all') {
+                const n = parseInt(count);
+                if (isNaN(n) || n < 5) {
+                    alert("請輸入 'all' 或大於等於 5 的數字。");
+                    return;
+                }
+                count = n;
+            }
+
+            let url = `/static/practice.html?count=${count}`;
+            if (mode === 'wrong') url += `&mode=wrong`;
+            else url += `&set_id=${setId}`;
+            window.location.href = url;
+        }
+
+        // 5. 上傳 CSV (無彈窗優化版)
+async function uploadCSV() {
+    const currentUid = localStorage.getItem('user_id');
+    const name = document.getElementById('set-name').value;
+    const fileInput = document.getElementById('csv-file');
+    const file = fileInput.files[0];
+    if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
+
+    // 抓取按鈕並改變狀態
+    const btn = document.querySelector('button[onclick="uploadCSV()"]');
+    btn.innerText = "🚀 正在上傳與處理中...請稍候";
+    btn.disabled = true;
+    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+    btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+
+    const fd = new FormData();
+    fd.append('set_name', name);
+    fd.append('file', file);
+
+    try {
+        const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
+        const data = await res.json();
+        
+        if (res.ok && data.status === 'success') {
+            location.reload(); // 上傳成功，自動重整頁面
+        } else {
+            alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
+        }
+    } catch (err) {
+        alert("網路連線發生錯誤，請確認伺服器是否運行中。");
+    } finally {
+        // 恢復按鈕狀態
+        btn.innerText = "上傳並開始分析例句";
+        btn.disabled = false;
+        btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+        btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+    }
+}
+
+        // 初始化執行
+        checkLogin();
+    </script>
+</body>
+</html>
