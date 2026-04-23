@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
 from deep_translator import GoogleTranslator
 import database as db
+from sqlalchemy import func
+from sqlalchemy import text # 加入這個來執行 SQL 語法
 
 app = FastAPI()
 db.init_db()
@@ -35,13 +37,54 @@ def submit_record(user_id: int = Form(...), set_name: str = Form(...), score: st
     return {"status": "success"}
 
 # --- 其餘原有 API ---
+# --- 自動升級資料庫欄位 (相容舊資料) ---
+@app.on_event("startup")
+def startup_event():
+    session = db.SessionLocal()
+    try:
+        # 嘗試自動為現有的資料表補上 password 欄位
+        session.execute(text("ALTER TABLE users ADD COLUMN password VARCHAR DEFAULT '0000'"))
+        session.commit()
+    except Exception:
+        session.rollback() # 如果欄位已經存在就會報錯，我們直接忽略即可
+    finally:
+        session.close()
+
+# --- 新增 API：取得所有已註冊學生名單 ---
+@app.get("/users")
+def get_all_users(dbs: Session = Depends(get_db)):
+    users = dbs.query(db.User).all()
+    return [{"id": u.id, "username": u.username} for u in users]
+
+# --- 新增 API：註冊新帳號 ---
+@app.post("/register")
+def register(username: str = Form(...), password: str = Form(...), dbs: Session = Depends(get_db)):
+    # 檢查名字是否被用過
+    if dbs.query(db.User).filter_by(username=username).first():
+        return {"status": "error", "message": "這個名字已經有人註冊囉！"}
+    
+    # 驗證密碼：至少4個字，且必須是數字
+    if not password.isdigit() or len(password) < 4:
+        return {"status": "error", "message": "密碼必須至少為 4 個數字！"}
+        
+    new_user = db.User(username=username, password=password)
+    dbs.add(new_user)
+    dbs.commit()
+    dbs.refresh(new_user)
+    return {"status": "success", "user_id": new_user.id, "username": new_user.username}
+
+# --- 修改 API：安全登入 ---
 @app.post("/login")
-def login(username: str = Form(...), dbs: Session = Depends(get_db)):
+def login(username: str = Form(...), password: str = Form(...), dbs: Session = Depends(get_db)):
     user = dbs.query(db.User).filter_by(username=username).first()
     if not user:
-        user = db.User(username=username)
-        dbs.add(user); dbs.commit(); dbs.refresh(user)
-    return {"user_id": user.id, "username": user.username}
+        return {"status": "error", "message": "找不到此學生，請先切換到註冊畫面！"}
+    
+    # 核對密碼 (舊帳號密碼預設為 0000)
+    if user.password and user.password != password:
+        return {"status": "error", "message": "密碼錯誤！"}
+        
+    return {"status": "success", "user_id": user.id, "username": user.username}
 
 @app.get("/users/{user_id}/sets")
 def get_user_sets(user_id: int, dbs: Session = Depends(get_db)):
@@ -49,39 +92,70 @@ def get_user_sets(user_id: int, dbs: Session = Depends(get_db)):
 
 @app.get("/wrong_answers/{user_id}")
 def get_wrong_answers(user_id: int, dbs: Session = Depends(get_db)):
-    wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).all()
+    # 👑 錯題本也一併加入洗牌機制，才不會每次都從同一個字開始錯
+    wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).order_by(func.random()).all()
     return [r.word for r in wrong_records]
 
 @app.get("/quiz/{set_id}")
 def get_quiz(set_id: int, dbs: Session = Depends(get_db)):
-    return dbs.query(db.Word).filter_by(word_set_id=set_id).all()
+    # 👑 加上 .order_by(func.random())，讓資料庫直接把這 45 題徹底洗牌再回傳
+    return dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(func.random()).all()
 
 @app.post("/submit_answer")
-def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: bool = Form(...), dbs: Session = Depends(get_db)):
-    if not is_correct:
-        if not dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).first():
+def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), dbs: Session = Depends(get_db)):
+    # 👑 強制轉換前端傳來的字串，避免型別誤判
+    is_true = is_correct.lower() in ['true', '1', 'yes']
+    
+    if not is_true:
+        # ❌ 答錯：如果錯題本裡還沒有，就新增進去
+        exists = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).first()
+        if not exists:
             dbs.add(db.WrongAnswer(user_id=user_id, word_id=word_id))
             dbs.commit()
+    else:
+        # ✅ 答對：確保把錯題本裡的紀錄清得乾乾淨淨
+        wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).all()
+        for r in wrong_records:
+            dbs.delete(r)
+        dbs.commit()
+            
     return {"status": "recorded"}
 
+# --- 請確認檔案最上方有這些 import ---
+# import json
+# import httpx
+# from deep_translator import GoogleTranslator
+
+# --- 貼在 upload_csv 的正上方 ---
 async def fetch_example_sentence(word: str):
     examples = []
     try:
-        async with httpx.AsyncClient() as client:
+        # 設定 timeout=5.0，避免網路卡住導致整個伺服器當機
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
             if resp.status_code == 200:
                 data = resp.json()
                 raw_exs = []
+                # 穿梭字典 API 的結構，找出例句 (最多找 2 句)
                 for entry in data:
                     for m in entry.get("meanings", []):
                         for d in m.get("definitions", []):
-                            if d.get("example"): raw_exs.append(d["example"])
+                            if d.get("example"): 
+                                raw_exs.append(d["example"])
                             if len(raw_exs) >= 2: break
+                
+                # 呼叫 Google 翻譯把英文例句翻成中文
                 gt = GoogleTranslator(source='en', target='zh-TW')
                 for ex in raw_exs:
                     examples.append({"en": ex, "zh": gt.translate(ex)})
-    except: pass
-    if not examples: examples = [{"en": f"I know the word {word}.", "zh": f"我認識 {word} 這個單字。"}]
+    except Exception as e:
+        print(f"抓取 {word} 的例句失敗: {e}")
+        pass
+        
+    # 保底機制：如果真的找不到例句，或者網路斷線，就給預設句子
+    if not examples: 
+        examples = [{"en": f"I am learning the word {word}.", "zh": f"我正在學習 {word} 這個單字。"}]
+        
     return json.dumps(examples)
 
 @app.post("/upload_csv/{user_id}")
@@ -92,23 +166,30 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
         dbs.commit()
         dbs.refresh(new_set)
         
-        # 關鍵修正：使用 utf-8-sig 自動移除 Excel 隱藏字元
         content = (await file.read()).decode('utf-8-sig').splitlines()
         reader = csv.DictReader(content)
         
+        # 防呆機制：標題轉小寫去空白
+        if reader.fieldnames:
+            reader.fieldnames = [str(f).strip().lower() if f else "" for f in reader.fieldnames]
+        
         for row in reader:
-            word = row.get('word', '').strip()
+            word = str(row.get('word') or '').strip()
             if not word:
-                continue # 如果遇到空白行就跳過
+                continue 
                 
-            # 為了確保不會卡住，我們依然先用測試版例句
-            default_ex = json.dumps([{"en": f"I am learning the word {word}.", "zh": f"我正在學習 {word} 這個單字。"}])
+            pos = str(row.get('pos') or '').strip()
+            chinese = str(row.get('chinese') or '').strip()
+            
+            # 👑 關鍵修正：呼叫真正的 API 去抓例句！
+            # 如果抓不到，fetch_example_sentence 裡面有寫好的保底機制
+            ex_json = await fetch_example_sentence(word)
             
             w = db.Word(
                 english=word, 
-                part_of_speech=row.get('pos', '').strip(), 
-                chinese=row.get('chinese', '').strip(), 
-                example_sentence=default_ex, 
+                part_of_speech=pos, 
+                chinese=chinese, 
+                example_sentence=ex_json, 
                 word_set_id=new_set.id
             )
             dbs.add(w)
@@ -116,7 +197,7 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
         dbs.commit()
         return {"status": "success"}
     except Exception as e:
-        print(f"上傳發生錯誤: {e}") # 會印在終端機裡
+        print(f"上傳發生錯誤: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.delete("/sets/{set_id}")

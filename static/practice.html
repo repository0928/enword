@@ -54,9 +54,13 @@ function shuffle(array) {
 }
 
 async function initQuiz() {
-    const api = (mode === 'wrong') ? `/wrong_answers/${userId}` : `/quiz/${setId}`;
+    // 👑 加上時間戳記，強迫瀏覽器每次都抓最新的單字名單
+    const timestamp = new Date().getTime();
+    const api = (mode === 'wrong') ? `/wrong_answers/${userId}?t=${timestamp}` : `/quiz/${setId}?t=${timestamp}`;
     const res = await fetch(api);
     let allWords = await res.json();
+    
+    // ... 下面保留你原本的程式碼
     
     if (!allWords.length) {
         alert("目前沒有題目！");
@@ -120,12 +124,17 @@ async function checkAnswer() {
     document.getElementById('feedback-title').innerHTML = isCorrect ? "✅ 答對了！" : `❌ 答案是：<b class="text-2xl">${word.english}</b>`;
     document.getElementById('feedback-example').innerHTML = exHtml;
 
-    if (!isCorrect) {
-        const fd = new FormData();
-        fd.append('user_id', userId);
-        fd.append('word_id', word.id);
-        fd.append('is_correct', false);
-        fetch('/submit_answer', { method: 'POST', body: fd });
+    // 👑 終極修正：把對錯轉換成明確的字串 'true' 或 'false'
+    const fd = new FormData();
+    fd.append('user_id', userId);
+    fd.append('word_id', word.id);
+    fd.append('is_correct', isCorrect ? 'true' : 'false'); 
+
+    // 加入 await 確保成績有確實傳送給伺服器
+    try {
+        await fetch('/submit_answer', { method: 'POST', body: fd });
+    } catch (err) {
+        console.error("成績回報失敗:", err);
     }
 }
 

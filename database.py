@@ -27,6 +27,8 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
+    # 👑 新增密碼欄位，為了相容你之前沒有密碼的舊帳號，給定預設值 "0000"
+    password = Column(String, default="0000") 
     word_sets = relationship("WordSet", back_populates="owner")
     wrong_answers = relationship("WrongAnswer", back_populates="user")
 

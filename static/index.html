@@ -11,18 +11,31 @@
     <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-8">
         <h1 class="text-3xl font-bold text-emerald-700 mb-6 text-center">📖 國中英文單字練習</h1>
 
-        <div id="login-section" class="mb-8 p-6 border-2 border-emerald-100 rounded-lg">
-            <h2 class="text-xl font-bold mb-4">學生登入</h2>
-            <div class="flex gap-2">
-                <input type="text" id="username" placeholder="輸入你的姓名" class="flex-1 p-2 border rounded focus:outline-emerald-500">
-                <button onclick="login()" class="bg-emerald-600 text-white px-6 py-2 rounded font-bold hover:bg-emerald-700">登入</button>
+        <div id="auth-section" class="mb-8 p-6 border-2 border-emerald-100 rounded-lg max-w-sm mx-auto">
+            <div class="flex mb-5 border-b-2 border-gray-100">
+                <button id="tab-login" onclick="switchTab('login')" class="flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all">登入</button>
+                <button id="tab-register" onclick="switchTab('register')" class="flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all">註冊新帳號</button>
+            </div>
+
+            <div id="login-form" class="flex flex-col gap-3">
+                <select id="login-username" class="p-2 border rounded focus:outline-emerald-500 bg-white">
+                    <option value="">-- 載入名單中... --</option>
+                </select>
+                <input type="password" id="login-password" placeholder="請輸入密碼" class="p-2 border rounded focus:outline-emerald-500">
+                <button onclick="login()" class="bg-emerald-600 text-white px-6 py-2 rounded font-bold hover:bg-emerald-700 mt-2">登入</button>
+            </div>
+
+            <div id="register-form" class="hidden flex-col gap-3">
+                <input type="text" id="reg-username" placeholder="請輸入你的姓名" class="p-2 border rounded focus:outline-emerald-500">
+                <input type="password" id="reg-password" placeholder="設定密碼 (至少 4 個數字)" class="p-2 border rounded focus:outline-emerald-500">
+                <button onclick="register()" class="bg-blue-500 text-white px-6 py-2 rounded font-bold hover:bg-blue-600 mt-2">註冊並登入</button>
             </div>
         </div>
 
         <div id="dashboard" class="hidden">
             <div class="flex justify-between items-center mb-6">
                 <p class="text-lg">你好，<span id="user-display" class="font-bold text-emerald-700"></span>！</p>
-                <button onclick="logout()" class="text-sm text-gray-500 underline">登出</button>
+                <button onclick="logout()" class="text-sm text-gray-500 underline hover:text-emerald-700">登出</button>
             </div>
 
             <div class="mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -35,31 +48,88 @@
             </div>
 
             <h3 class="font-bold mb-4">📚 我的題組</h3>
-            <ul id="sets-list" class="space-y-3">
-                </ul>
+            <ul id="sets-list" class="space-y-3"></ul>
 
             <h3 class="font-bold mt-8 mb-4 border-t pt-4">📊 最近練習紀錄</h3>
-            <ul id="records-list" class="text-sm space-y-2 text-gray-600">
-                </ul>
+            <ul id="records-list" class="text-sm space-y-2 text-gray-600"></ul>
         </div>
     </div>
 
     <script>
-        // 1. 登入邏輯
-        async function login() {
-            const name = document.getElementById('username').value.trim();
-            if (!name) return alert("請輸入姓名");
+        // --- 介面與帳號切換邏輯 ---
+        function switchTab(mode) {
+            const isLogin = mode === 'login';
+            document.getElementById('login-form').classList.toggle('hidden', !isLogin);
+            document.getElementById('register-form').classList.toggle('hidden', isLogin);
             
+            document.getElementById('tab-login').className = isLogin ? "flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all" : "flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all";
+            document.getElementById('tab-register').className = !isLogin ? "flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all" : "flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all";
+        }
+
+        async function loadUserList() {
+            try {
+                const res = await fetch(`/users?t=${new Date().getTime()}`);
+                const users = await res.json();
+                const select = document.getElementById('login-username');
+                
+                if (users.length === 0) {
+                    select.innerHTML = '<option value="">目前尚無學生，請先註冊</option>';
+                } else {
+                    select.innerHTML = '<option value="">-- 選擇你的名字 --</option>';
+                    users.forEach(u => {
+                        select.innerHTML += `<option value="${u.username}">${u.username}</option>`;
+                    });
+                }
+            } catch (e) {
+                console.error("載入名單失敗");
+            }
+        }
+
+        // --- 註冊與登入 ---
+        async function register() {
+            const name = document.getElementById('reg-username').value.trim();
+            const pass = document.getElementById('reg-password').value.trim();
+            
+            if (!name) return alert("請輸入姓名！");
+            if (!/^\d{4,}$/.test(pass)) return alert("密碼必須至少包含 4 個數字！");
+
             const fd = new FormData();
             fd.append('username', name);
-            try {
-                const res = await fetch('/login', { method: 'POST', body: fd });
-                const data = await res.json();
+            fd.append('password', pass);
+
+            const res = await fetch('/register', { method: 'POST', body: fd });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                alert("註冊成功！準備進入系統...");
                 localStorage.setItem('user_id', data.user_id);
                 localStorage.setItem('username', data.username);
                 checkLogin();
-            } catch (err) {
-                console.error("Login failed:", err);
+            } else {
+                alert(data.message);
+            }
+        }
+
+        async function login() {
+            const name = document.getElementById('login-username').value;
+            const pass = document.getElementById('login-password').value.trim();
+            
+            if (!name) return alert("請選擇你的名字！");
+            if (!pass) return alert("請輸入密碼！");
+            
+            const fd = new FormData();
+            fd.append('username', name);
+            fd.append('password', pass);
+
+            const res = await fetch('/login', { method: 'POST', body: fd });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                localStorage.setItem('user_id', data.user_id);
+                localStorage.setItem('username', data.username);
+                checkLogin();
+            } else {
+                alert(data.message);
             }
         }
 
@@ -68,40 +138,39 @@
             location.reload();
         }
 
-        // 2. 檢查登入狀態
         async function checkLogin() {
             const currentUid = localStorage.getItem('user_id');
             if (currentUid) {
-                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('auth-section').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
                 document.getElementById('user-display').innerText = localStorage.getItem('username');
                 await showDashboard();
+            } else {
+                loadUserList(); // 未登入時載入名單
             }
         }
 
-        // 3. 顯示控制台
+        // --- 儀表板邏輯 (保留並優化) ---
         async function showDashboard() {
             const currentUid = localStorage.getItem('user_id');
             const list = document.getElementById('sets-list');
             const rList = document.getElementById('records-list');
-            
             list.innerHTML = "<p class='text-gray-400'>載入中...</p>";
 
             try {
-                // 同時抓取錯題狀態、題組與紀錄 (加入時間戳記防快取)
+                const timestamp = new Date().getTime();
                 const [wrongRes, setsRes, recordRes] = await Promise.all([
-                    fetch(`/users/${currentUid}/has_wrong`),
-                    fetch(`/users/${currentUid}/sets`),
-                    fetch(`/records/${currentUid}?t=${new Date().getTime()}`)
+                    fetch(`/users/${currentUid}/has_wrong?t=${timestamp}`),
+                    fetch(`/users/${currentUid}/sets?t=${timestamp}`),
+                    fetch(`/records/${currentUid}?t=${timestamp}`)
                 ]);
 
                 const { has_wrong } = await wrongRes.json();
                 const sets = await setsRes.json();
                 const records = await recordRes.json();
 
-                list.innerHTML = ""; // 清空
+                list.innerHTML = ""; 
 
-                // 顯示錯題本
                 if (has_wrong) {
                     list.innerHTML += `
                         <li class="p-4 border-2 border-red-200 rounded flex justify-between items-center bg-red-50 mb-4 shadow-sm">
@@ -114,7 +183,6 @@
                     `;
                 }
 
-                // 顯示一般題組 (包含刪除按鈕)
                 if (sets.length === 0 && !has_wrong) {
                     list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
                 } else {
@@ -123,15 +191,14 @@
                             <li class="p-4 border border-emerald-200 rounded flex justify-between items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm">
                                 <span class="font-bold text-lg">${set.name}</span>
                                 <div class="flex gap-2">
-                                    <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold">開始練習</button>
-                                    <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-2 rounded hover:bg-red-500 hover:text-white transition font-bold">刪除</button>
+                                    <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold shadow-sm">開始練習</button>
+                                    <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-2 rounded hover:bg-red-500 hover:text-white transition font-bold shadow-sm">刪除</button>
                                 </div>
                             </li>
                         `;
                     });
                 }
 
-                // 顯示紀錄
                 rList.innerHTML = records.length ? "" : "<li>暫無紀錄</li>";
                 records.forEach(r => {
                     rList.innerHTML += `
@@ -144,44 +211,34 @@
                 });
 
             } catch (err) {
-                console.error("Load dashboard failed:", err);
                 list.innerHTML = "<p class='text-red-500'>載入資料失敗，請重新整理。</p>";
             }
         }
 
-        // 4. 啟動練習
+        // --- 以下保留你原有的練習、上傳、刪除功能 ---
         function startPractice(setId, mode) {
             let count = prompt("請輸入要練習的題數 (輸入 'all' 為全部練習，或至少輸入 5)：", "all");
             if (count === null) return;
-            
             if (count !== 'all') {
                 const n = parseInt(count);
-                if (isNaN(n) || n < 5) {
-                    alert("請輸入 'all' 或大於等於 5 的數字。");
-                    return;
-                }
+                if (isNaN(n) || n < 5) return alert("請輸入 'all' 或大於等於 5 的數字。");
                 count = n;
             }
-
             let url = `/static/practice.html?count=${count}`;
-            if (mode === 'wrong') url += `&mode=wrong`;
-            else url += `&set_id=${setId}`;
+            url += mode === 'wrong' ? `&mode=wrong` : `&set_id=${setId}`;
             window.location.href = url;
         }
 
-        // 5. 上傳 CSV (優化版)
         async function uploadCSV() {
             const currentUid = localStorage.getItem('user_id');
             const name = document.getElementById('set-name').value;
-            const fileInput = document.getElementById('csv-file');
-            const file = fileInput.files[0];
+            const file = document.getElementById('csv-file').files[0];
             if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
 
             const btn = document.querySelector('button[onclick="uploadCSV()"]');
             btn.innerText = "🚀 正在上傳與處理中...請稍候";
             btn.disabled = true;
-            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
-            btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+            btn.classList.add('bg-gray-400'); btn.classList.remove('bg-emerald-500');
 
             const fd = new FormData();
             fd.append('set_name', name);
@@ -190,39 +247,24 @@
             try {
                 const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
                 const data = await res.json();
-                
-                if (res.ok && data.status === 'success') {
-                    location.reload(); 
-                } else {
-                    alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
-                }
+                if (res.ok && data.status === 'success') location.reload(); 
+                else alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
             } catch (err) {
-                alert("網路連線發生錯誤，請確認伺服器是否運行中。");
+                alert("網路連線發生錯誤。");
             } finally {
                 btn.innerText = "上傳並開始分析例句";
                 btn.disabled = false;
-                btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
-                btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+                btn.classList.add('bg-emerald-500'); btn.classList.remove('bg-gray-400');
             }
         }
 
-        // 6. 刪除題組
         async function deleteSet(setId) {
-            if (!confirm("⚠️ 確定要刪除這個題組嗎？\n刪除後，裡面的單字與相關的錯題紀錄都會一併消失喔！")) {
-                return;
-            }
-
+            if (!confirm("⚠️ 確定要刪除這個題組嗎？")) return;
             try {
                 const res = await fetch(`/sets/${setId}`, { method: 'DELETE' });
-                const data = await res.json();
-                
-                if (res.ok && data.status === 'success') {
-                    showDashboard(); 
-                } else {
-                    alert("刪除失敗：" + (data.message || "未知錯誤"));
-                }
+                if (res.ok) showDashboard(); 
             } catch (err) {
-                alert("網路連線發生錯誤，請確認伺服器是否運行中。");
+                alert("網路連線發生錯誤。");
             }
         }
 
