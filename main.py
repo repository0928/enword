@@ -7,6 +7,7 @@ from deep_translator import GoogleTranslator
 import database as db
 from sqlalchemy import func
 from sqlalchemy import text # 加入這個來執行 SQL 語法
+from fastapi import FastAPI, Depends, UploadFile, File, Form, Response
 
 app = FastAPI()
 db.init_db()
@@ -157,6 +158,61 @@ async def fetch_example_sentence(word: str):
         examples = [{"en": f"I am learning the word {word}.", "zh": f"我正在學習 {word} 這個單字。"}]
         
     return json.dumps(examples)
+
+# --- 新增功能 1：下載 CSV 範例檔 ---
+# --- 修改功能 1：下載 CSV 範例檔 (補上例句欄位) ---
+@app.get("/download_template")
+def download_template():
+    # 加入了 example_sentence 欄位，並示範了「有填例句」與「沒填例句」的寫法
+    csv_content = (
+        "\ufeffword,pos,chinese,example_sentence\n"
+        "apple,n,蘋果,I eat an apple every day.\n"
+        "run,v,跑步,She likes to run in the park.\n"
+        "beautiful,adj,美麗的,\n"  # 示範留白：這格不填的話，系統會自動找 AI 抓例句
+    )
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=template.csv"}
+    )
+
+# --- 新增功能 2：手動新增單字到現有題組 ---
+@app.post("/sets/{set_id}/words")
+async def add_word_to_set(
+    set_id: int, 
+    english: str = Form(...), 
+    part_of_speech: str = Form(""), 
+    chinese: str = Form(...), 
+    example_sentence: str = Form(""), 
+    dbs: Session = Depends(get_db)
+):
+    # 檢查題組是否存在
+    word_set = dbs.query(db.WordSet).filter(db.WordSet.id == set_id).first()
+    if not word_set:
+        return {"status": "error", "message": "找不到該題組"}
+
+    english = english.strip()
+    
+    # 如果使用者沒有填寫例句，就呼叫 AI 自動產生
+    if not example_sentence.strip():
+        ex_json = await fetch_example_sentence(english)
+    else:
+        # 如果有自己填，就打包成 JSON 格式儲存
+        import json
+        ex_json = json.dumps([{"en": example_sentence.strip(), "zh": "（老師自訂例句）"}])
+
+    new_word = db.Word(
+        english=english,
+        part_of_speech=part_of_speech.strip(),
+        chinese=chinese.strip(),
+        example_sentence=ex_json,
+        word_set_id=set_id
+    )
+    dbs.add(new_word)
+    dbs.commit()
+    
+    return {"status": "success"}
+
 
 @app.post("/upload_csv/{user_id}")
 async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile = File(...), dbs: Session = Depends(get_db)):

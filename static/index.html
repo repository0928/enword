@@ -6,7 +6,7 @@
     <title>國中英文單字練習系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6">
+<body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6 relative">
 
     <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-8">
         <h1 class="text-3xl font-bold text-emerald-700 mb-6 text-center">📖 國中英文單字練習</h1>
@@ -16,7 +16,6 @@
                 <button id="tab-login" onclick="switchTab('login')" class="flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all">登入</button>
                 <button id="tab-register" onclick="switchTab('register')" class="flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all">註冊新帳號</button>
             </div>
-
             <div id="login-form" class="flex flex-col gap-3">
                 <select id="login-username" class="p-2 border rounded focus:outline-emerald-500 bg-white">
                     <option value="">-- 載入名單中... --</option>
@@ -24,7 +23,6 @@
                 <input type="password" id="login-password" placeholder="請輸入密碼" class="p-2 border rounded focus:outline-emerald-500">
                 <button onclick="login()" class="bg-emerald-600 text-white px-6 py-2 rounded font-bold hover:bg-emerald-700 mt-2">登入</button>
             </div>
-
             <div id="register-form" class="hidden flex-col gap-3">
                 <input type="text" id="reg-username" placeholder="請輸入你的姓名" class="p-2 border rounded focus:outline-emerald-500">
                 <input type="password" id="reg-password" placeholder="設定密碼 (至少 4 個數字)" class="p-2 border rounded focus:outline-emerald-500">
@@ -39,7 +37,12 @@
             </div>
 
             <div class="mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 class="font-bold mb-2">➕ 新增題組 (上傳 CSV)</h3>
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-bold">➕ 新增題組 (上傳 CSV)</h3>
+                    <a href="/download_template" class="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1">
+                        📥 下載範例檔.csv
+                    </a>
+                </div>
                 <div class="flex flex-col gap-2">
                     <input type="text" id="set-name" placeholder="題組名稱 (如：L1 單字)" class="p-2 border rounded">
                     <input type="file" id="csv-file" accept=".csv" class="text-sm">
@@ -55,13 +58,41 @@
         </div>
     </div>
 
+    <div id="add-word-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h3 class="text-xl font-bold text-emerald-800 mb-4 border-b pb-2">➕ 新增單字</h3>
+            <input type="hidden" id="modal-set-id">
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm font-bold text-gray-600">英文單字 <span class="text-red-500">*</span></label>
+                    <input type="text" id="modal-en" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">中文意思 <span class="text-red-500">*</span></label>
+                    <input type="text" id="modal-zh" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">詞性 (選填，如: n, v, adj)</label>
+                    <input type="text" id="modal-pos" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">自訂例句 (選填)</label>
+                    <textarea id="modal-ex" placeholder="若留白，系統將自動搜尋 AI 例句" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeWordModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold transition">取消</button>
+                <button onclick="submitNewWord()" id="modal-submit-btn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold transition flex items-center gap-2">儲存單字</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // --- 介面與帳號切換邏輯 ---
+        // --- 帳號邏輯 ---
         function switchTab(mode) {
             const isLogin = mode === 'login';
             document.getElementById('login-form').classList.toggle('hidden', !isLogin);
             document.getElementById('register-form').classList.toggle('hidden', isLogin);
-            
             document.getElementById('tab-login').className = isLogin ? "flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all" : "flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all";
             document.getElementById('tab-register').className = !isLogin ? "flex-1 py-2 font-bold text-emerald-600 border-b-4 border-emerald-600 transition-all" : "flex-1 py-2 font-bold text-gray-400 border-b-4 border-transparent hover:text-emerald-500 transition-all";
         }
@@ -71,86 +102,49 @@
                 const res = await fetch(`/users?t=${new Date().getTime()}`);
                 const users = await res.json();
                 const select = document.getElementById('login-username');
-                
-                if (users.length === 0) {
-                    select.innerHTML = '<option value="">目前尚無學生，請先註冊</option>';
-                } else {
-                    select.innerHTML = '<option value="">-- 選擇你的名字 --</option>';
-                    users.forEach(u => {
-                        select.innerHTML += `<option value="${u.username}">${u.username}</option>`;
-                    });
-                }
-            } catch (e) {
-                console.error("載入名單失敗");
-            }
+                select.innerHTML = users.length === 0 ? '<option value="">目前尚無學生，請先註冊</option>' : '<option value="">-- 選擇你的名字 --</option>' + users.map(u => `<option value="${u.username}">${u.username}</option>`).join('');
+            } catch (e) {}
         }
 
-        // --- 註冊與登入 ---
         async function register() {
             const name = document.getElementById('reg-username').value.trim();
             const pass = document.getElementById('reg-password').value.trim();
-            
             if (!name) return alert("請輸入姓名！");
             if (!/^\d{4,}$/.test(pass)) return alert("密碼必須至少包含 4 個數字！");
 
-            const fd = new FormData();
-            fd.append('username', name);
-            fd.append('password', pass);
-
+            const fd = new FormData(); fd.append('username', name); fd.append('password', pass);
             const res = await fetch('/register', { method: 'POST', body: fd });
             const data = await res.json();
-
             if (data.status === 'success') {
-                alert("註冊成功！準備進入系統...");
-                localStorage.setItem('user_id', data.user_id);
-                localStorage.setItem('username', data.username);
-                checkLogin();
-            } else {
-                alert(data.message);
-            }
+                localStorage.setItem('user_id', data.user_id); localStorage.setItem('username', data.username); checkLogin();
+            } else alert(data.message);
         }
 
         async function login() {
             const name = document.getElementById('login-username').value;
             const pass = document.getElementById('login-password').value.trim();
+            if (!name || !pass) return alert("請選擇名字並輸入密碼！");
             
-            if (!name) return alert("請選擇你的名字！");
-            if (!pass) return alert("請輸入密碼！");
-            
-            const fd = new FormData();
-            fd.append('username', name);
-            fd.append('password', pass);
-
+            const fd = new FormData(); fd.append('username', name); fd.append('password', pass);
             const res = await fetch('/login', { method: 'POST', body: fd });
             const data = await res.json();
-
             if (data.status === 'success') {
-                localStorage.setItem('user_id', data.user_id);
-                localStorage.setItem('username', data.username);
-                checkLogin();
-            } else {
-                alert(data.message);
-            }
+                localStorage.setItem('user_id', data.user_id); localStorage.setItem('username', data.username); checkLogin();
+            } else alert(data.message);
         }
 
-        function logout() {
-            localStorage.clear();
-            location.reload();
-        }
+        function logout() { localStorage.clear(); location.reload(); }
 
         async function checkLogin() {
-            const currentUid = localStorage.getItem('user_id');
-            if (currentUid) {
+            if (localStorage.getItem('user_id')) {
                 document.getElementById('auth-section').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
                 document.getElementById('user-display').innerText = localStorage.getItem('username');
                 await showDashboard();
-            } else {
-                loadUserList(); // 未登入時載入名單
-            }
+            } else loadUserList();
         }
 
-        // --- 儀表板邏輯 (保留並優化) ---
+        // --- 顯示控制台 (加入新增單字按鈕) ---
         async function showDashboard() {
             const currentUid = localStorage.getItem('user_id');
             const list = document.getElementById('sets-list');
@@ -158,41 +152,37 @@
             list.innerHTML = "<p class='text-gray-400'>載入中...</p>";
 
             try {
-                const timestamp = new Date().getTime();
+                const ts = new Date().getTime();
                 const [wrongRes, setsRes, recordRes] = await Promise.all([
-                    fetch(`/users/${currentUid}/has_wrong?t=${timestamp}`),
-                    fetch(`/users/${currentUid}/sets?t=${timestamp}`),
-                    fetch(`/records/${currentUid}?t=${timestamp}`)
+                    fetch(`/users/${currentUid}/has_wrong?t=${ts}`),
+                    fetch(`/users/${currentUid}/sets?t=${ts}`),
+                    fetch(`/records/${currentUid}?t=${ts}`)
                 ]);
 
                 const { has_wrong } = await wrongRes.json();
                 const sets = await setsRes.json();
                 const records = await recordRes.json();
-
                 list.innerHTML = ""; 
 
                 if (has_wrong) {
                     list.innerHTML += `
                         <li class="p-4 border-2 border-red-200 rounded flex justify-between items-center bg-red-50 mb-4 shadow-sm">
-                            <div>
-                                <span class="font-bold text-lg text-red-700">❌ 我的錯題本</span>
-                                <p class="text-xs text-red-500">這裡收集了你答錯的單字</p>
-                            </div>
+                            <div><span class="font-bold text-lg text-red-700">❌ 我的錯題本</span></div>
                             <button onclick="startPractice(null, 'wrong')" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 font-bold">進入練習</button>
                         </li>
                     `;
                 }
 
-                if (sets.length === 0 && !has_wrong) {
-                    list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
-                } else {
+                if (sets.length === 0 && !has_wrong) list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
+                else {
                     sets.forEach(set => {
                         list.innerHTML += `
-                            <li class="p-4 border border-emerald-200 rounded flex justify-between items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm">
+                            <li class="p-4 border border-emerald-200 rounded flex flex-col sm:flex-row sm:justify-between sm:items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm gap-3">
                                 <span class="font-bold text-lg">${set.name}</span>
-                                <div class="flex gap-2">
-                                    <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600 font-bold shadow-sm">開始練習</button>
-                                    <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-2 rounded hover:bg-red-500 hover:text-white transition font-bold shadow-sm">刪除</button>
+                                <div class="flex gap-2 flex-wrap">
+                                    <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-3 py-1.5 rounded hover:bg-emerald-600 font-bold text-sm">開始練習</button>
+                                    <button onclick="openWordModal(${set.id})" class="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 font-bold text-sm">➕ 加單字</button>
+                                    <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
                                 </div>
                             </li>
                         `;
@@ -201,21 +191,54 @@
 
                 rList.innerHTML = records.length ? "" : "<li>暫無紀錄</li>";
                 records.forEach(r => {
-                    rList.innerHTML += `
-                        <li class="p-2 bg-white border-b flex justify-between items-center">
-                            <span class="text-xs text-gray-400">📅 ${r.created_at}</span>
-                            <span class="font-medium text-gray-700">${r.set_name}</span>
-                            <span class="font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">${r.score}</span>
-                        </li>
-                    `;
+                    rList.innerHTML += `<li class="p-2 bg-white border-b flex justify-between items-center"><span class="text-xs text-gray-400">📅 ${r.created_at}</span><span class="font-medium text-gray-700">${r.set_name}</span><span class="font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">${r.score}</span></li>`;
                 });
+            } catch (err) { list.innerHTML = "<p class='text-red-500'>載入失敗，請重整。</p>"; }
+        }
 
-            } catch (err) {
-                list.innerHTML = "<p class='text-red-500'>載入資料失敗，請重新整理。</p>";
+        // --- 👑 手動新增單字邏輯 ---
+        function openWordModal(setId) {
+            document.getElementById('modal-set-id').value = setId;
+            document.getElementById('modal-en').value = '';
+            document.getElementById('modal-zh').value = '';
+            document.getElementById('modal-pos').value = '';
+            document.getElementById('modal-ex').value = '';
+            document.getElementById('add-word-modal').classList.remove('hidden');
+        }
+
+        function closeWordModal() {
+            document.getElementById('add-word-modal').classList.add('hidden');
+        }
+
+        async function submitNewWord() {
+            const setId = document.getElementById('modal-set-id').value;
+            const en = document.getElementById('modal-en').value.trim();
+            const zh = document.getElementById('modal-zh').value.trim();
+            const pos = document.getElementById('modal-pos').value.trim();
+            const ex = document.getElementById('modal-ex').value.trim();
+
+            if (!en || !zh) return alert("英文單字和中文意思為必填項目！");
+
+            const btn = document.getElementById('modal-submit-btn');
+            btn.innerText = "儲存中..."; btn.disabled = true;
+
+            const fd = new FormData();
+            fd.append('english', en); fd.append('chinese', zh);
+            fd.append('part_of_speech', pos); fd.append('example_sentence', ex);
+
+            try {
+                const res = await fetch(`/sets/${setId}/words`, { method: 'POST', body: fd });
+                if (res.ok) {
+                    alert("✅ 單字新增成功！");
+                    closeWordModal();
+                } else alert("新增失敗");
+            } catch (err) { alert("網路錯誤"); }
+            finally {
+                btn.innerText = "儲存單字"; btn.disabled = false;
             }
         }
 
-        // --- 以下保留你原有的練習、上傳、刪除功能 ---
+        // --- 其他原有功能 ---
         function startPractice(setId, mode) {
             let count = prompt("請輸入要練習的題數 (輸入 'all' 為全部練習，或至少輸入 5)：", "all");
             if (count === null) return;
@@ -224,9 +247,7 @@
                 if (isNaN(n) || n < 5) return alert("請輸入 'all' 或大於等於 5 的數字。");
                 count = n;
             }
-            let url = `/static/practice.html?count=${count}`;
-            url += mode === 'wrong' ? `&mode=wrong` : `&set_id=${setId}`;
-            window.location.href = url;
+            window.location.href = `/static/practice.html?count=${count}&${mode === 'wrong' ? 'mode=wrong' : 'set_id='+setId}`;
         }
 
         async function uploadCSV() {
@@ -236,39 +257,22 @@
             if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
 
             const btn = document.querySelector('button[onclick="uploadCSV()"]');
-            btn.innerText = "🚀 正在上傳與處理中...請稍候";
-            btn.disabled = true;
-            btn.classList.add('bg-gray-400'); btn.classList.remove('bg-emerald-500');
+            btn.innerText = "🚀 處理中..."; btn.disabled = true;
 
-            const fd = new FormData();
-            fd.append('set_name', name);
-            fd.append('file', file);
-
+            const fd = new FormData(); fd.append('set_name', name); fd.append('file', file);
             try {
                 const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
-                const data = await res.json();
-                if (res.ok && data.status === 'success') location.reload(); 
-                else alert("伺服器處理失敗：" + (data.message || "未知錯誤"));
-            } catch (err) {
-                alert("網路連線發生錯誤。");
-            } finally {
-                btn.innerText = "上傳並開始分析例句";
-                btn.disabled = false;
-                btn.classList.add('bg-emerald-500'); btn.classList.remove('bg-gray-400');
-            }
+                if (res.ok) location.reload(); 
+            } catch (err) { alert("發生錯誤。"); }
+            finally { btn.innerText = "上傳並開始分析例句"; btn.disabled = false; }
         }
 
         async function deleteSet(setId) {
             if (!confirm("⚠️ 確定要刪除這個題組嗎？")) return;
-            try {
-                const res = await fetch(`/sets/${setId}`, { method: 'DELETE' });
-                if (res.ok) showDashboard(); 
-            } catch (err) {
-                alert("網路連線發生錯誤。");
-            }
+            const res = await fetch(`/sets/${setId}`, { method: 'DELETE' });
+            if (res.ok) showDashboard(); 
         }
 
-        // 初始化執行
         checkLogin();
     </script>
 </body>
