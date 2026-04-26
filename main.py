@@ -145,10 +145,6 @@ async def fetch_example_sentence(word: str):
         print(f"抓取 {word} 的例句失敗: {e}")
         pass
         
-    # 保底機制：如果真的找不到例句，或者網路斷線，就給預設句子
-    if not examples: 
-        examples = [{"en": f"I am learning the word {word}.", "zh": f"我正在學習 {word} 這個單字。"}]
-        
     return json.dumps(examples)
 
 # --- 下載 CSV 範例檔 ---
@@ -230,7 +226,12 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
                 word = str(row.get('word') or '').strip()
                 pos  = str(row.get('pos')  or '').strip()
                 chinese = str(row.get('chinese') or '').strip()
-                csv_example = str(row.get('example_sentence') or '').strip()
+                # 相容多種欄位名稱寫法：example_sentence / example sentence / example
+                csv_example = (
+                    str(row.get('example_sentence') or '').strip() or
+                    str(row.get('example sentence') or '').strip() or
+                    str(row.get('example') or '').strip()
+                )
 
                 if csv_example:
                     # CSV 有填例句，直接使用，不呼叫 API

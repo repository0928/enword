@@ -114,15 +114,17 @@ async function checkAnswer() {
 
     let examples = [];
     try { examples = JSON.parse(word.example_sentence || "[]"); } catch(e) {}
-    
+
     const highlight = (text) => text.replace(new RegExp(word.english, 'gi'), `<b>${word.english}</b>`);
-    
-    let exHtml = examples.map(ex => `
-        <div class="border-l-4 border-emerald-200 pl-3 mb-2">
-            <p class="text-gray-800">📖 ${highlight(ex.en)}</p>
-            <p class="text-emerald-700 text-sm">${ex.zh}</p>
-        </div>
-    `).join('');
+
+    let exHtml = examples.length
+        ? examples.map(ex => `
+            <div class="border-l-4 border-emerald-200 pl-3 mb-2">
+                <p class="text-gray-800">📖 ${highlight(ex.en)}</p>
+                <p class="text-emerald-700 text-sm">${ex.zh}</p>
+            </div>
+          `).join('')
+        : `<p class="text-gray-400 text-sm">（此單字暫無例句）</p>`;
 
     const box = document.getElementById('feedback-box');
     box.classList.remove('hidden', 'bg-emerald-100', 'bg-red-100');
