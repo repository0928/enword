@@ -1,13 +1,11 @@
 import csv, json, httpx
-from fastapi import FastAPI, Depends, UploadFile, File, Form
+from fastapi import FastAPI, Depends, UploadFile, File, Form, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
 from deep_translator import GoogleTranslator
 import database as db
-from sqlalchemy import func
-from sqlalchemy import text # 加入這個來執行 SQL 語法
-from fastapi import FastAPI, Depends, UploadFile, File, Form, Response
 
 app = FastAPI()
 db.init_db()
@@ -122,12 +120,6 @@ def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct
             
     return {"status": "recorded"}
 
-# --- 請確認檔案最上方有這些 import ---
-# import json
-# import httpx
-# from deep_translator import GoogleTranslator
-
-# --- 貼在 upload_csv 的正上方 ---
 async def fetch_example_sentence(word: str):
     examples = []
     try:
@@ -159,8 +151,7 @@ async def fetch_example_sentence(word: str):
         
     return json.dumps(examples)
 
-# --- 新增功能 1：下載 CSV 範例檔 ---
-# --- 修改功能 1：下載 CSV 範例檔 (補上例句欄位) ---
+# --- 下載 CSV 範例檔 ---
 @app.get("/download_template")
 def download_template():
     # 加入了 example_sentence 欄位，並示範了「有填例句」與「沒填例句」的寫法
@@ -198,7 +189,6 @@ async def add_word_to_set(
         ex_json = await fetch_example_sentence(english)
     else:
         # 如果有自己填，就打包成 JSON 格式儲存
-        import json
         ex_json = json.dumps([{"en": example_sentence.strip(), "zh": "（老師自訂例句）"}])
 
     new_word = db.Word(

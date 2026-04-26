@@ -9,6 +9,9 @@ ENV/
 # 環境變數
 .env
 
+# 資料庫
+*.db
+
 # 作業系統檔案
 .DS_Store
 Thumbs.db
