@@ -11,6 +11,11 @@
     <div class="max-w-lg w-full bg-white rounded-xl shadow-lg p-8">
         <a href="/" class="text-emerald-600 underline mb-4 inline-block">← 放棄練習，返回首頁</a>
         
+        <!-- 讀取中提示 -->
+        <div id="loading-container" class="text-center py-8">
+            <p class="text-gray-400 text-lg animate-pulse">⏳ 題目載入中...</p>
+        </div>
+
         <div id="quiz-container" class="text-center hidden">
             <p class="text-sm text-gray-500 mb-2">進度: <span id="progress"></span></p>
             <h2 class="text-4xl font-bold text-gray-800 mb-2" id="q-chinese">中文</h2>
@@ -62,9 +67,11 @@ async function initQuiz() {
     
     // ... 下面保留你原本的程式碼
     
+    document.getElementById('loading-container').classList.add('hidden');
+
     if (!allWords.length) {
         alert("目前沒有題目！");
-        window.location.href = "/static/index.html";
+        window.location.href = "/";
         return;
     }
 
