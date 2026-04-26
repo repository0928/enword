@@ -230,8 +230,14 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
                 word = str(row.get('word') or '').strip()
                 pos  = str(row.get('pos')  or '').strip()
                 chinese = str(row.get('chinese') or '').strip()
+                csv_example = str(row.get('example_sentence') or '').strip()
 
-                ex_json = await fetch_example_sentence(word)
+                if csv_example:
+                    # CSV 有填例句，直接使用，不呼叫 API
+                    ex_json = json.dumps([{"en": csv_example, "zh": "（自訂例句）"}])
+                else:
+                    # CSV 沒有例句，才去抓 API
+                    ex_json = await fetch_example_sentence(word)
 
                 dbs.add(db.Word(
                     english=word,
