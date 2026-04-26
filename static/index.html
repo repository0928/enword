@@ -46,7 +46,18 @@
                 <div class="flex flex-col gap-2">
                     <input type="text" id="set-name" placeholder="題組名稱 (如：L1 單字)" class="p-2 border rounded">
                     <input type="file" id="csv-file" accept=".csv" class="text-sm">
-                    <button onclick="uploadCSV()" class="bg-emerald-500 text-white py-2 rounded font-bold hover:bg-emerald-600">上傳並開始分析例句</button>
+                    <button id="upload-btn" onclick="uploadCSV()" class="bg-emerald-500 text-white py-2 rounded font-bold hover:bg-emerald-600">上傳並開始分析例句</button>
+
+                    <!-- 進度條區塊（上傳時才顯示） -->
+                    <div id="upload-progress" class="hidden mt-2">
+                        <div class="flex justify-between text-sm text-gray-500 mb-1">
+                            <span id="progress-label">準備中...</span>
+                            <span id="progress-count"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div id="progress-bar" class="bg-emerald-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -256,15 +267,69 @@
             const file = document.getElementById('csv-file').files[0];
             if (!name || !file) return alert("請填寫題組名稱並選擇檔案");
 
-            const btn = document.querySelector('button[onclick="uploadCSV()"]');
-            btn.innerText = "🚀 處理中..."; btn.disabled = true;
+            const btn = document.getElementById('upload-btn');
+            const progressBox = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressLabel = document.getElementById('progress-label');
+            const progressCount = document.getElementById('progress-count');
 
-            const fd = new FormData(); fd.append('set_name', name); fd.append('file', file);
+            btn.disabled = true;
+            btn.innerText = "🚀 上傳中...";
+            progressBox.classList.remove('hidden');
+            progressLabel.innerText = "正在上傳檔案...";
+            progressCount.innerText = "";
+            progressBar.style.width = "0%";
+
+            const fd = new FormData();
+            fd.append('set_name', name);
+            fd.append('file', file);
+
             try {
                 const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
-                if (res.ok) location.reload(); 
-            } catch (err) { alert("發生錯誤。"); }
-            finally { btn.innerText = "上傳並開始分析例句"; btn.disabled = false; }
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop(); // 保留未完整的行
+
+                    for (const line of lines) {
+                        if (!line.startsWith("data: ")) continue;
+                        const data = JSON.parse(line.slice(6));
+
+                        if (data.error) {
+                            alert("上傳發生錯誤：" + data.error);
+                            return;
+                        }
+                        if (data.done) {
+                            progressBar.style.width = "100%";
+                            progressLabel.innerText = "✅ 完成！即將重新整理...";
+                            progressCount.innerText = "";
+                            setTimeout(() => location.reload(), 800);
+                            return;
+                        }
+                        // 更新進度條
+                        const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+                        progressBar.style.width = pct + "%";
+                        progressLabel.innerText = data.current === 0
+                            ? "正在準備題組..."
+                            : `正在處理：${data.word}`;
+                        progressCount.innerText = data.current > 0
+                            ? `${data.current} / ${data.total}`
+                            : "";
+                    }
+                }
+            } catch (err) {
+                alert("發生錯誤，請重試。");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "上傳並開始分析例句";
+            }
         }
 
         async function deleteSet(setId) {

@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, StreamingResponse
 from deep_translator import GoogleTranslator
 import database as db
 
@@ -205,46 +205,54 @@ async def add_word_to_set(
 
 
 @app.post("/upload_csv/{user_id}")
-async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile = File(...), dbs: Session = Depends(get_db)):
-    try:
-        new_set = db.WordSet(name=set_name, owner_id=user_id)
-        dbs.add(new_set)
-        dbs.commit()
-        dbs.refresh(new_set)
-        
-        content = (await file.read()).decode('utf-8-sig').splitlines()
-        reader = csv.DictReader(content)
-        
-        # 防呆機制：標題轉小寫去空白
-        if reader.fieldnames:
-            reader.fieldnames = [str(f).strip().lower() if f else "" for f in reader.fieldnames]
-        
-        for row in reader:
-            word = str(row.get('word') or '').strip()
-            if not word:
-                continue 
-                
-            pos = str(row.get('pos') or '').strip()
-            chinese = str(row.get('chinese') or '').strip()
-            
-            # 👑 關鍵修正：呼叫真正的 API 去抓例句！
-            # 如果抓不到，fetch_example_sentence 裡面有寫好的保底機制
-            ex_json = await fetch_example_sentence(word)
-            
-            w = db.Word(
-                english=word, 
-                part_of_speech=pos, 
-                chinese=chinese, 
-                example_sentence=ex_json, 
-                word_set_id=new_set.id
-            )
-            dbs.add(w)
-            
-        dbs.commit()
-        return {"status": "success"}
-    except Exception as e:
-        print(f"上傳發生錯誤: {e}")
-        return {"status": "error", "message": str(e)}
+async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile = File(...)):
+    content = (await file.read()).decode('utf-8-sig').splitlines()
+    reader = csv.DictReader(content)
+
+    # 防呆機制：標題轉小寫去空白
+    if reader.fieldnames:
+        reader.fieldnames = [str(f).strip().lower() if f else "" for f in reader.fieldnames]
+
+    rows = [row for row in reader if str(row.get('word') or '').strip()]
+    total = len(rows)
+
+    async def generate():
+        dbs = db.SessionLocal()
+        try:
+            new_set = db.WordSet(name=set_name, owner_id=user_id)
+            dbs.add(new_set)
+            dbs.commit()
+            dbs.refresh(new_set)
+
+            yield f"data: {json.dumps({'total': total, 'current': 0})}\n\n"
+
+            for i, row in enumerate(rows):
+                word = str(row.get('word') or '').strip()
+                pos  = str(row.get('pos')  or '').strip()
+                chinese = str(row.get('chinese') or '').strip()
+
+                ex_json = await fetch_example_sentence(word)
+
+                dbs.add(db.Word(
+                    english=word,
+                    part_of_speech=pos,
+                    chinese=chinese,
+                    example_sentence=ex_json,
+                    word_set_id=new_set.id
+                ))
+                dbs.commit()
+
+                yield f"data: {json.dumps({'total': total, 'current': i + 1, 'word': word})}\n\n"
+
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        except Exception as e:
+            print(f"上傳發生錯誤: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            dbs.close()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.delete("/sets/{set_id}")
 def delete_set(set_id: int, dbs: Session = Depends(get_db)):
