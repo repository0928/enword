@@ -75,6 +75,7 @@ class AnswerLog(Base):
     record_id = Column(Integer, ForeignKey("practice_records.id"), nullable=True)
     word_id = Column(Integer, ForeignKey("words.id"))
     is_correct = Column(Integer)  # 1=答對, 0=答錯
+    user_answer = Column(String, nullable=True)  # 使用者當時輸入的答案
     record = relationship("PracticeRecord", back_populates="answer_logs")
     word = relationship("Word")
 

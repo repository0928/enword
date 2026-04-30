@@ -139,6 +139,7 @@ async function checkAnswer() {
     fd.append('word_id', word.id);
     fd.append('is_correct', isCorrect ? 'true' : 'false');
     fd.append('session_id', sessionId);
+    fd.append('user_answer', input);
 
     try {
         await fetch('/submit_answer', { method: 'POST', body: fd });

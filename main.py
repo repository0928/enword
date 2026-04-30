@@ -157,12 +157,12 @@ def get_quiz(set_id: int, dbs: Session = Depends(get_db)):
     return dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(func.random()).all()
 
 @app.post("/submit_answer")
-def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), session_id: str = Form(""), dbs: Session = Depends(get_db)):
+def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), session_id: str = Form(""), user_answer: str = Form(""), dbs: Session = Depends(get_db)):
     is_true = is_correct.lower() in ['true', '1', 'yes']
 
     # 寫入作答明細
     if session_id:
-        dbs.add(db.AnswerLog(session_id=session_id, word_id=word_id, is_correct=1 if is_true else 0))
+        dbs.add(db.AnswerLog(session_id=session_id, word_id=word_id, is_correct=1 if is_true else 0, user_answer=user_answer.strip()))
 
     if not is_true:
         exists = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).first()
@@ -186,6 +186,7 @@ def get_record_details(record_id: int, dbs: Session = Depends(get_db)):
             "english": log.word.english,
             "chinese": log.word.chinese,
             "is_correct": bool(log.is_correct),
+            "user_answer": log.user_answer or "",
         }
         for log in logs
     ]

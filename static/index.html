@@ -314,10 +314,13 @@
                 return;
             }
             content.innerHTML = logs.map(l => `
-                <div class="flex items-center justify-between p-2 rounded ${l.is_correct ? 'bg-emerald-50' : 'bg-red-50'}">
-                    <span>${l.is_correct ? '✅' : '❌'}</span>
-                    <span class="font-bold flex-1 ml-2">${l.english}</span>
-                    <span class="text-gray-500">${l.chinese}</span>
+                <div class="p-2 rounded ${l.is_correct ? 'bg-emerald-50' : 'bg-red-50'}">
+                    <div class="flex items-center justify-between">
+                        <span>${l.is_correct ? '✅' : '❌'}</span>
+                        <span class="font-bold flex-1 ml-2">${l.english}</span>
+                        <span class="text-gray-500 text-sm">${l.chinese}</span>
+                    </div>
+                    ${!l.is_correct && l.user_answer ? `<div class="mt-1 ml-6 text-sm text-red-400">你的作答：${l.user_answer}</div>` : ''}
                 </div>
             `).join('');
         }
