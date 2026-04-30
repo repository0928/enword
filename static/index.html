@@ -66,6 +66,11 @@
 
             <h3 class="font-bold mt-8 mb-4 border-t pt-4">📊 最近練習紀錄</h3>
             <ul id="records-list" class="text-sm space-y-2 text-gray-600"></ul>
+            <div id="records-pagination" style="display:none" class="items-center justify-between mt-4 text-sm">
+                <button id="page-prev" onclick="changePage(-1)" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 font-bold disabled:opacity-40">← 上一頁</button>
+                <span id="page-info" class="text-gray-500"></span>
+                <button id="page-next" onclick="changePage(1)" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 font-bold disabled:opacity-40">下一頁 →</button>
+            </div>
         </div>
     </div>
 
@@ -95,6 +100,17 @@
                 <button onclick="closeWordModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold transition">取消</button>
                 <button onclick="submitNewWord()" id="modal-submit-btn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold transition flex items-center gap-2">儲存單字</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 作答明細 Modal -->
+    <div id="detail-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-xl font-bold text-emerald-800">📋 作答明細</h3>
+                <button onclick="closeDetailModal()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="detail-content" class="overflow-y-auto flex-1 space-y-2"></div>
         </div>
     </div>
 
@@ -172,7 +188,7 @@
 
                 const { has_wrong } = await wrongRes.json();
                 const sets = await setsRes.json();
-                const records = await recordRes.json();
+                const { records, total, page, total_pages } = await recordRes.json();
                 list.innerHTML = ""; 
 
                 if (has_wrong) {
@@ -187,12 +203,13 @@
                 if (sets.length === 0 && !has_wrong) list.innerHTML = "<p class='text-gray-500'>目前還沒有題組，請先上傳 CSV 檔案。</p>";
                 else {
                     sets.forEach(set => {
+                        const encodedName = encodeURIComponent(set.name);
                         list.innerHTML += `
                             <li class="p-4 border border-emerald-200 rounded flex flex-col sm:flex-row sm:justify-between sm:items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm gap-3">
                                 <span class="font-bold text-lg">${set.name}</span>
                                 <div class="flex gap-2 flex-wrap">
                                     <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-3 py-1.5 rounded hover:bg-emerald-600 font-bold text-sm">開始練習</button>
-                                    <button onclick="openWordModal(${set.id})" class="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 font-bold text-sm">➕ 加單字</button>
+                                    <a href="/static/words.html?set_id=${set.id}&name=${encodedName}" class="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 font-bold text-sm">查看</a>
                                     <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
                                 </div>
                             </li>
@@ -200,10 +217,7 @@
                     });
                 }
 
-                rList.innerHTML = records.length ? "" : "<li>暫無紀錄</li>";
-                records.forEach(r => {
-                    rList.innerHTML += `<li class="p-2 bg-white border-b flex justify-between items-center"><span class="text-xs text-gray-400">📅 ${r.created_at}</span><span class="font-medium text-gray-700">${r.set_name}</span><span class="font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">${r.score}</span></li>`;
-                });
+                renderRecords(records, total, page, total_pages);
             } catch (err) { list.innerHTML = "<p class='text-red-500'>載入失敗，請重整。</p>"; }
         }
 
@@ -247,6 +261,66 @@
             finally {
                 btn.innerText = "儲存單字"; btn.disabled = false;
             }
+        }
+
+        // --- 紀錄翻頁 ---
+        let currentPage = 1;
+
+        function renderRecords(records, total, page, total_pages) {
+            const rList = document.getElementById('records-list');
+            const pagination = document.getElementById('records-pagination');
+            rList.innerHTML = records.length
+                ? records.map(r => `
+                    <li class="p-2 bg-white border-b flex justify-between items-center ${r.has_detail ? 'cursor-pointer hover:bg-emerald-50' : ''} rounded transition"
+                        ${r.has_detail ? `onclick="showDetail(${r.id})"` : ''}>
+                        <span class="text-xs text-gray-400">📅 ${r.created_at}</span>
+                        <span class="font-medium text-gray-700">${r.set_name}</span>
+                        <span class="font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">${r.score}</span>
+                    </li>`).join('')
+                : '<li class="text-gray-400 py-2">60 天內暫無紀錄</li>';
+
+            if (total_pages > 1) {
+                pagination.style.display = 'flex';
+                document.getElementById('page-info').innerText = `第 ${page} / ${total_pages} 頁`;
+                document.getElementById('page-prev').disabled = page <= 1;
+                document.getElementById('page-next').disabled = page >= total_pages;
+            } else {
+                pagination.style.display = 'none';
+            }
+        }
+
+        async function changePage(dir) {
+            const currentUid = localStorage.getItem('user_id');
+            currentPage += dir;
+            const ts = new Date().getTime();
+            const res = await fetch(`/records/${currentUid}?page=${currentPage}&t=${ts}`);
+            const { records, total, page, total_pages } = await res.json();
+            renderRecords(records, total, page, total_pages);
+        }
+
+        // --- 作答明細 ---
+        async function showDetail(recordId) {
+            const modal = document.getElementById('detail-modal');
+            const content = document.getElementById('detail-content');
+            content.innerHTML = '<p class="text-gray-400 text-center py-4">載入中...</p>';
+            modal.classList.remove('hidden');
+            const res = await fetch(`/records/${recordId}/details`);
+            const logs = await res.json();
+            if (!logs.length) {
+                content.innerHTML = '<p class="text-gray-400 text-center py-4">無作答明細</p>';
+                return;
+            }
+            content.innerHTML = logs.map(l => `
+                <div class="flex items-center justify-between p-2 rounded ${l.is_correct ? 'bg-emerald-50' : 'bg-red-50'}">
+                    <span>${l.is_correct ? '✅' : '❌'}</span>
+                    <span class="font-bold flex-1 ml-2">${l.english}</span>
+                    <span class="text-gray-500">${l.chinese}</span>
+                </div>
+            `).join('');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
         }
 
         // --- 其他原有功能 ---

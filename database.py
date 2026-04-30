@@ -64,7 +64,19 @@ class PracticeRecord(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     set_name = Column(String)  # 紀錄當時練習的題組名稱
     score = Column(String)     # 儲存格式如 "8/10"
+    session_id = Column(String, nullable=True)  # 對應 AnswerLog 的 session
     created_at = Column(String, default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    answer_logs = relationship("AnswerLog", back_populates="record", cascade="all, delete-orphan")
+
+class AnswerLog(Base):
+    __tablename__ = "answer_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True)
+    record_id = Column(Integer, ForeignKey("practice_records.id"), nullable=True)
+    word_id = Column(Integer, ForeignKey("words.id"))
+    is_correct = Column(Integer)  # 1=答對, 0=答錯
+    record = relationship("PracticeRecord", back_populates="answer_logs")
+    word = relationship("Word")
 
 # --- 3. 初始化資料庫 ---
 def init_db():

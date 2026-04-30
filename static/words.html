@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>單字管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6">
+
+    <div class="max-w-3xl mx-auto">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <a href="/" class="text-emerald-600 underline text-sm">← 返回首頁</a>
+                <h1 class="text-2xl font-bold text-emerald-700 mt-1">📋 <span id="set-title">題組單字</span></h1>
+            </div>
+            <button onclick="openAddModal()" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 text-sm">➕ 新增單字</button>
+        </div>
+
+        <div id="loading" class="text-center py-12 text-gray-400">載入中...</div>
+
+        <div id="word-list" class="space-y-2 hidden"></div>
+    </div>
+
+    <!-- 新增單字 Modal -->
+    <div id="add-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h3 class="text-xl font-bold text-emerald-800 mb-4 border-b pb-2">➕ 新增單字</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm font-bold text-gray-600">英文單字 <span class="text-red-500">*</span></label>
+                    <input type="text" id="add-en" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">中文意思 <span class="text-red-500">*</span></label>
+                    <input type="text" id="add-zh" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">詞性 (選填)</label>
+                    <input type="text" id="add-pos" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">例句 (選填，留白自動抓取)</label>
+                    <textarea id="add-ex" rows="2" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeAddModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold">取消</button>
+                <button onclick="submitAdd()" id="add-submit-btn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold">儲存單字</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編輯單字 Modal -->
+    <div id="edit-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h3 class="text-xl font-bold text-emerald-800 mb-4 border-b pb-2">✏️ 編輯單字</h3>
+            <input type="hidden" id="edit-word-id">
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm font-bold text-gray-600">英文單字 <span class="text-red-500">*</span></label>
+                    <input type="text" id="edit-en" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">中文意思 <span class="text-red-500">*</span></label>
+                    <input type="text" id="edit-zh" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">詞性 (選填)</label>
+                    <input type="text" id="edit-pos" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">例句 (選填，留白自動抓取)</label>
+                    <textarea id="edit-ex" rows="2" class="w-full p-2 border rounded focus:outline-emerald-500 bg-gray-50"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button onclick="closeEditModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold">取消</button>
+                <button onclick="submitEdit()" id="edit-submit-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold">儲存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const setId = params.get('set_id');
+        const setName = params.get('name') || '題組單字';
+
+        document.getElementById('set-title').innerText = setName;
+        document.title = `${setName} - 單字管理`;
+
+        async function loadWords() {
+            const res = await fetch(`/sets/${setId}/words`);
+            const words = await res.json();
+            const list = document.getElementById('word-list');
+            document.getElementById('loading').classList.add('hidden');
+
+            if (!words.length) {
+                list.classList.remove('hidden');
+                list.innerHTML = '<p class="text-gray-400 text-center py-8">此題組尚無單字</p>';
+                return;
+            }
+
+            list.innerHTML = words.map((w, i) => `
+                <div class="bg-white border border-emerald-100 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
+                    <div class="flex-1">
+                        <div class="flex items-baseline gap-2 flex-wrap">
+                            <span class="text-lg font-bold text-gray-800">${w.english}</span>
+                            <span class="text-sm text-emerald-600">${w.part_of_speech || ''}</span>
+                            <span class="text-gray-600">${w.chinese}</span>
+                        </div>
+                        ${w.example_sentence ? `<p class="text-sm text-gray-400 mt-1">📖 ${w.example_sentence}</p>` : ''}
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button onclick='openEditModal(${JSON.stringify(w)})' class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
+                        <button onclick="deleteWord(${w.id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
+                    </div>
+                </div>
+            `).join('');
+            list.classList.remove('hidden');
+        }
+
+        async function deleteWord(wordId, btn) {
+            if (!confirm('確定要刪除這個單字嗎？')) return;
+            btn.disabled = true;
+            const res = await fetch(`/words/${wordId}`, { method: 'DELETE' });
+            if (res.ok) loadWords();
+            else { alert('刪除失敗'); btn.disabled = false; }
+        }
+
+        // 新增單字
+        function openAddModal() {
+            document.getElementById('add-en').value = '';
+            document.getElementById('add-zh').value = '';
+            document.getElementById('add-pos').value = '';
+            document.getElementById('add-ex').value = '';
+            document.getElementById('add-modal').classList.remove('hidden');
+        }
+        function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+
+        async function submitAdd() {
+            const en = document.getElementById('add-en').value.trim();
+            const zh = document.getElementById('add-zh').value.trim();
+            if (!en || !zh) return alert('英文和中文為必填！');
+            const btn = document.getElementById('add-submit-btn');
+            btn.innerText = '儲存中...'; btn.disabled = true;
+            const fd = new FormData();
+            fd.append('english', en);
+            fd.append('chinese', zh);
+            fd.append('part_of_speech', document.getElementById('add-pos').value.trim());
+            fd.append('example_sentence', document.getElementById('add-ex').value.trim());
+            const res = await fetch(`/sets/${setId}/words`, { method: 'POST', body: fd });
+            if (res.ok) { closeAddModal(); loadWords(); }
+            else alert('新增失敗');
+            btn.innerText = '儲存單字'; btn.disabled = false;
+        }
+
+        // 編輯單字
+        function openEditModal(word) {
+            document.getElementById('edit-word-id').value = word.id;
+            document.getElementById('edit-en').value = word.english;
+            document.getElementById('edit-zh').value = word.chinese;
+            document.getElementById('edit-pos').value = word.part_of_speech || '';
+            document.getElementById('edit-ex').value = word.example_sentence || '';
+            document.getElementById('edit-modal').classList.remove('hidden');
+        }
+        function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+
+        async function submitEdit() {
+            const wordId = document.getElementById('edit-word-id').value;
+            const en = document.getElementById('edit-en').value.trim();
+            const zh = document.getElementById('edit-zh').value.trim();
+            if (!en || !zh) return alert('英文和中文為必填！');
+            const btn = document.getElementById('edit-submit-btn');
+            btn.innerText = '儲存中...'; btn.disabled = true;
+            const fd = new FormData();
+            fd.append('english', en);
+            fd.append('chinese', zh);
+            fd.append('part_of_speech', document.getElementById('edit-pos').value.trim());
+            fd.append('example_sentence', document.getElementById('edit-ex').value.trim());
+            const res = await fetch(`/words/${wordId}`, { method: 'PUT', body: fd });
+            if (res.ok) { closeEditModal(); loadWords(); }
+            else alert('修改失敗');
+            btn.innerText = '儲存修改'; btn.disabled = false;
+        }
+
+        if (!setId) {
+            document.getElementById('loading').innerText = '找不到題組，請從首頁進入。';
+        } else {
+            loadWords();
+        }
+    </script>
+</body>
+</html>

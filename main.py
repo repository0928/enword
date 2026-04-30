@@ -22,17 +22,41 @@ def has_wrong(user_id: int, dbs: Session = Depends(get_db)):
     exists = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).first()
     return {"has_wrong": exists is not None}
 
-# --- 新增的 API：取得練習紀錄 ---
+# --- 新增的 API：取得練習紀錄（翻頁 + 60 天過濾）---
 @app.get("/records/{user_id}")
-def get_records(user_id: int, dbs: Session = Depends(get_db)):
-    return dbs.query(db.PracticeRecord).filter_by(user_id=user_id).order_by(db.PracticeRecord.id.desc()).limit(10).all()
+def get_records(user_id: int, page: int = 1, dbs: Session = Depends(get_db)):
+    import datetime
+    per_page = 10
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=60)).strftime("%Y-%m-%d %H:%M")
+    query = (
+        dbs.query(db.PracticeRecord)
+        .filter_by(user_id=user_id)
+        .filter(db.PracticeRecord.created_at >= cutoff)
+        .order_by(db.PracticeRecord.id.desc())
+    )
+    total = query.count()
+    records = query.offset((page - 1) * per_page).limit(per_page).all()
+    return {
+        "records": [
+            {"id": r.id, "set_name": r.set_name, "score": r.score, "created_at": r.created_at, "has_detail": bool(r.session_id)}
+            for r in records
+        ],
+        "total": total,
+        "page": page,
+        "total_pages": max(1, (total + per_page - 1) // per_page),
+    }
 
 # --- 新增的 API：提交練習紀錄 ---
 @app.post("/submit_record")
-def submit_record(user_id: int = Form(...), set_name: str = Form(...), score: str = Form(...), dbs: Session = Depends(get_db)):
-    record = db.PracticeRecord(user_id=user_id, set_name=set_name, score=score)
+def submit_record(user_id: int = Form(...), set_name: str = Form(...), score: str = Form(...), session_id: str = Form(""), dbs: Session = Depends(get_db)):
+    record = db.PracticeRecord(user_id=user_id, set_name=set_name, score=score, session_id=session_id or None)
     dbs.add(record)
     dbs.commit()
+    dbs.refresh(record)
+    # 將 AnswerLog 的 record_id 補上
+    if session_id:
+        dbs.query(db.AnswerLog).filter_by(session_id=session_id).update({"record_id": record.id})
+        dbs.commit()
     return {"status": "success"}
 
 # --- 其餘原有 API ---
@@ -101,24 +125,38 @@ def get_quiz(set_id: int, dbs: Session = Depends(get_db)):
     return dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(func.random()).all()
 
 @app.post("/submit_answer")
-def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), dbs: Session = Depends(get_db)):
-    # 👑 強制轉換前端傳來的字串，避免型別誤判
+def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), session_id: str = Form(""), dbs: Session = Depends(get_db)):
     is_true = is_correct.lower() in ['true', '1', 'yes']
-    
+
+    # 寫入作答明細
+    if session_id:
+        dbs.add(db.AnswerLog(session_id=session_id, word_id=word_id, is_correct=1 if is_true else 0))
+
     if not is_true:
-        # ❌ 答錯：如果錯題本裡還沒有，就新增進去
         exists = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).first()
         if not exists:
             dbs.add(db.WrongAnswer(user_id=user_id, word_id=word_id))
-            dbs.commit()
     else:
-        # ✅ 答對：確保把錯題本裡的紀錄清得乾乾淨淨
-        wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).all()
-        for r in wrong_records:
+        for r in dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).all():
             dbs.delete(r)
-        dbs.commit()
-            
+
+    dbs.commit()
     return {"status": "recorded"}
+
+@app.get("/records/{record_id}/details")
+def get_record_details(record_id: int, dbs: Session = Depends(get_db)):
+    record = dbs.query(db.PracticeRecord).filter_by(id=record_id).first()
+    if not record or not record.session_id:
+        return []
+    logs = dbs.query(db.AnswerLog).filter_by(session_id=record.session_id).all()
+    return [
+        {
+            "english": log.word.english,
+            "chinese": log.word.chinese,
+            "is_correct": bool(log.is_correct),
+        }
+        for log in logs
+    ]
 
 async def fetch_example_sentence(word: str):
     examples = []
@@ -260,6 +298,59 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
             dbs.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+# --- 題組單字管理 ---
+@app.get("/sets/{set_id}/words")
+def get_set_words(set_id: int, dbs: Session = Depends(get_db)):
+    words = dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(db.Word.id).all()
+    result = []
+    for w in words:
+        examples = []
+        try:
+            examples = json.loads(w.example_sentence or "[]")
+        except Exception:
+            pass
+        ex_text = examples[0]["en"] if examples else ""
+        result.append({
+            "id": w.id,
+            "english": w.english,
+            "chinese": w.chinese,
+            "part_of_speech": w.part_of_speech,
+            "example_sentence": ex_text,
+        })
+    return result
+
+@app.delete("/words/{word_id}")
+def delete_word(word_id: int, dbs: Session = Depends(get_db)):
+    dbs.query(db.WrongAnswer).filter_by(word_id=word_id).delete()
+    word = dbs.query(db.Word).filter_by(id=word_id).first()
+    if not word:
+        return {"status": "error", "message": "找不到單字"}
+    dbs.delete(word)
+    dbs.commit()
+    return {"status": "success"}
+
+@app.put("/words/{word_id}")
+async def update_word(
+    word_id: int,
+    english: str = Form(...),
+    chinese: str = Form(...),
+    part_of_speech: str = Form(""),
+    example_sentence: str = Form(""),
+    dbs: Session = Depends(get_db)
+):
+    word = dbs.query(db.Word).filter_by(id=word_id).first()
+    if not word:
+        return {"status": "error", "message": "找不到單字"}
+    word.english = english.strip()
+    word.chinese = chinese.strip()
+    word.part_of_speech = part_of_speech.strip()
+    if example_sentence.strip():
+        word.example_sentence = json.dumps([{"en": example_sentence.strip(), "zh": "（自訂例句）"}])
+    else:
+        word.example_sentence = await fetch_example_sentence(english.strip())
+    dbs.commit()
+    return {"status": "success"}
 
 @app.delete("/sets/{set_id}")
 def delete_set(set_id: int, dbs: Session = Depends(get_db)):
