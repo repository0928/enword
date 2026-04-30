@@ -14,11 +14,10 @@
                 <a href="/" class="text-emerald-600 underline text-sm">← 返回首頁</a>
                 <h1 class="text-2xl font-bold text-emerald-700 mt-1">📋 <span id="set-title">題組單字</span></h1>
             </div>
-            <button onclick="openAddModal()" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 text-sm">➕ 新增單字</button>
+            <button id="add-btn" onclick="openAddModal()" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 text-sm">➕ 新增單字</button>
         </div>
 
         <div id="loading" class="text-center py-12 text-gray-400">載入中...</div>
-
         <div id="word-list" class="space-y-2 hidden"></div>
     </div>
 
@@ -85,23 +84,40 @@
         const params = new URLSearchParams(window.location.search);
         const setId = params.get('set_id');
         const setName = params.get('name') || '題組單字';
+        const isWrongMode = params.get('mode') === 'wrong';
+        const userId = localStorage.getItem('user_id');
 
-        document.getElementById('set-title').innerText = setName;
-        document.title = `${setName} - 單字管理`;
+        // 錯題本模式：隱藏新增按鈕、更換標題
+        if (isWrongMode) {
+            document.getElementById('set-title').innerText = '我的錯題本';
+            document.title = '錯題本 - 單字查看';
+            document.getElementById('add-btn').classList.add('hidden');
+        } else {
+            document.getElementById('set-title').innerText = setName;
+            document.title = `${setName} - 單字管理`;
+        }
 
         async function loadWords() {
-            const res = await fetch(`/sets/${setId}/words`);
+            const api = isWrongMode
+                ? `/wrong_answers/${userId}/list`
+                : `/sets/${setId}/words`;
+            const res = await fetch(api);
             const words = await res.json();
             const list = document.getElementById('word-list');
             document.getElementById('loading').classList.add('hidden');
 
             if (!words.length) {
                 list.classList.remove('hidden');
-                list.innerHTML = '<p class="text-gray-400 text-center py-8">此題組尚無單字</p>';
+                list.innerHTML = `<p class="text-gray-400 text-center py-8">${isWrongMode ? '錯題本目前是空的！' : '此題組尚無單字'}</p>`;
                 return;
             }
 
-            list.innerHTML = words.map((w, i) => `
+            list.innerHTML = words.map(w => {
+                const actionBtns = isWrongMode
+                    ? `<button onclick="removeFromWrong(${w.word_id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">移除</button>`
+                    : `<button onclick='openEditModal(${JSON.stringify(w)})' class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
+                       <button onclick="deleteWord(${w.id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>`;
+                return `
                 <div class="bg-white border border-emerald-100 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
                     <div class="flex-1">
                         <div class="flex items-baseline gap-2 flex-wrap">
@@ -111,15 +127,13 @@
                         </div>
                         ${w.example_sentence ? `<p class="text-sm text-gray-400 mt-1">📖 ${w.example_sentence}</p>` : ''}
                     </div>
-                    <div class="flex gap-2 shrink-0">
-                        <button onclick='openEditModal(${JSON.stringify(w)})' class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
-                        <button onclick="deleteWord(${w.id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
-                    </div>
-                </div>
-            `).join('');
+                    <div class="flex gap-2 shrink-0">${actionBtns}</div>
+                </div>`;
+            }).join('');
             list.classList.remove('hidden');
         }
 
+        // 一般題組：刪除單字
         async function deleteWord(wordId, btn) {
             if (!confirm('確定要刪除這個單字嗎？')) return;
             btn.disabled = true;
@@ -128,7 +142,16 @@
             else { alert('刪除失敗'); btn.disabled = false; }
         }
 
-        // 新增單字
+        // 錯題本：移除單字
+        async function removeFromWrong(wordId, btn) {
+            if (!confirm('確定要從錯題本移除這個單字嗎？')) return;
+            btn.disabled = true;
+            const res = await fetch(`/wrong_answers/${userId}/${wordId}`, { method: 'DELETE' });
+            if (res.ok) loadWords();
+            else { alert('移除失敗'); btn.disabled = false; }
+        }
+
+        // 新增單字（一般題組用）
         function openAddModal() {
             document.getElementById('add-en').value = '';
             document.getElementById('add-zh').value = '';
@@ -155,7 +178,7 @@
             btn.innerText = '儲存單字'; btn.disabled = false;
         }
 
-        // 編輯單字
+        // 編輯單字（一般題組用）
         function openEditModal(word) {
             document.getElementById('edit-word-id').value = word.id;
             document.getElementById('edit-en').value = word.english;
@@ -184,7 +207,8 @@
             btn.innerText = '儲存修改'; btn.disabled = false;
         }
 
-        if (!setId) {
+        // 初始化
+        if (!isWrongMode && !setId) {
             document.getElementById('loading').innerText = '找不到題組，請從首頁進入。';
         } else {
             loadWords();

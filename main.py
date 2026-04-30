@@ -115,9 +115,41 @@ def get_user_sets(user_id: int, dbs: Session = Depends(get_db)):
 
 @app.get("/wrong_answers/{user_id}")
 def get_wrong_answers(user_id: int, dbs: Session = Depends(get_db)):
-    # 👑 錯題本也一併加入洗牌機制，才不會每次都從同一個字開始錯
     wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).order_by(func.random()).all()
     return [r.word for r in wrong_records]
+
+@app.get("/wrong_answers/{user_id}/list")
+def list_wrong_answers(user_id: int, dbs: Session = Depends(get_db)):
+    """查看錯題本（照加入順序，附 word_id 供前端刪除用）"""
+    wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).order_by(db.WrongAnswer.id).all()
+    result = []
+    for r in wrong_records:
+        w = r.word
+        examples = []
+        try:
+            examples = json.loads(w.example_sentence or "[]")
+        except Exception:
+            pass
+        ex_text = examples[0]["en"] if examples else ""
+        result.append({
+            "wrong_id": r.id,
+            "word_id": w.id,
+            "english": w.english,
+            "chinese": w.chinese,
+            "part_of_speech": w.part_of_speech,
+            "example_sentence": ex_text,
+        })
+    return result
+
+@app.delete("/wrong_answers/{user_id}/{word_id}")
+def remove_wrong_answer(user_id: int, word_id: int, dbs: Session = Depends(get_db)):
+    """從錯題本移除單一單字"""
+    record = dbs.query(db.WrongAnswer).filter_by(user_id=user_id, word_id=word_id).first()
+    if not record:
+        return {"status": "error", "message": "找不到此錯題紀錄"}
+    dbs.delete(record)
+    dbs.commit()
+    return {"status": "success"}
 
 @app.get("/quiz/{set_id}")
 def get_quiz(set_id: int, dbs: Session = Depends(get_db)):

@@ -195,7 +195,10 @@
                     list.innerHTML += `
                         <li class="p-4 border-2 border-red-200 rounded flex justify-between items-center bg-red-50 mb-4 shadow-sm">
                             <div><span class="font-bold text-lg text-red-700">❌ 我的錯題本</span></div>
-                            <button onclick="startPractice(null, 'wrong')" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 font-bold">進入練習</button>
+                            <div class="flex gap-2">
+                                <a href="/static/words.html?mode=wrong" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 font-bold">查看</a>
+                                <button onclick="startPractice(null, 'wrong')" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 font-bold">進入練習</button>
+                            </div>
                         </li>
                     `;
                 }
