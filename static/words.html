@@ -97,25 +97,27 @@
             document.title = `${setName} - 單字管理`;
         }
 
+        let wordCache = []; // 存放所有單字資料，避免在 onclick 傳 JSON 引發引號衝突
+
         async function loadWords() {
             const api = isWrongMode
                 ? `/wrong_answers/${userId}/list`
                 : `/sets/${setId}/words`;
             const res = await fetch(api);
-            const words = await res.json();
+            wordCache = await res.json();
             const list = document.getElementById('word-list');
             document.getElementById('loading').classList.add('hidden');
 
-            if (!words.length) {
+            if (!wordCache.length) {
                 list.classList.remove('hidden');
                 list.innerHTML = `<p class="text-gray-400 text-center py-8">${isWrongMode ? '錯題本目前是空的！' : '此題組尚無單字'}</p>`;
                 return;
             }
 
-            list.innerHTML = words.map(w => {
+            list.innerHTML = wordCache.map((w, i) => {
                 const actionBtns = isWrongMode
                     ? `<button onclick="removeFromWrong(${w.word_id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">移除</button>`
-                    : `<button onclick='openEditModal(${JSON.stringify(w)})' class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
+                    : `<button onclick="openEditModal(${i})" class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
                        <button onclick="deleteWord(${w.id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>`;
                 return `
                 <div class="bg-white border border-emerald-100 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
@@ -179,7 +181,8 @@
         }
 
         // 編輯單字（一般題組用）
-        function openEditModal(word) {
+        function openEditModal(index) {
+            const word = wordCache[index];
             document.getElementById('edit-word-id').value = word.id;
             document.getElementById('edit-en').value = word.english;
             document.getElementById('edit-zh').value = word.chinese;
