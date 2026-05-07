@@ -271,6 +271,38 @@ async def add_word_to_set(
     return {"status": "success"}
 
 
+@app.get("/sets/{set_id}/export")
+def export_set(set_id: int, dbs: Session = Depends(get_db)):
+    """下載題組的 CSV 檔"""
+    word_set = dbs.query(db.WordSet).filter_by(id=set_id).first()
+    if not word_set:
+        return Response("找不到題組", status_code=404)
+    words = dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(db.Word.id).all()
+
+    lines = ["﻿word,pos,chinese,example sentence\n"]
+    for w in words:
+        ex_text = ""
+        try:
+            examples = json.loads(w.example_sentence or "[]")
+            if examples:
+                ex_text = examples[0]["en"]
+        except Exception:
+            pass
+        # 若欄位含逗號或引號，用雙引號包起來
+        def esc(s):
+            s = s or ""
+            if "," in s or '"' in s or "\n" in s:
+                s = '"' + s.replace('"', '""') + '"'
+            return s
+        lines.append(f"{esc(w.english)},{esc(w.part_of_speech)},{esc(w.chinese)},{esc(ex_text)}\n")
+
+    filename = f"{word_set.name}.csv"
+    return Response(
+        content="".join(lines),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+    )
+
 @app.post("/upload_csv/{user_id}")
 async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile = File(...)):
     content = (await file.read()).decode('utf-8-sig').splitlines()

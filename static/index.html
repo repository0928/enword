@@ -61,7 +61,10 @@
                 </div>
             </div>
 
-            <h3 class="font-bold mb-4">📚 我的題組</h3>
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold">📚 我的題組</h3>
+                <button onclick="openUploadModal()" class="bg-emerald-600 text-white px-3 py-1.5 rounded font-bold hover:bg-emerald-700 text-sm">＋ 上傳題組</button>
+            </div>
             <ul id="sets-list" class="space-y-3"></ul>
 
             <h3 class="font-bold mt-8 mb-4 border-t pt-4">📊 最近練習紀錄</h3>
@@ -70,6 +73,39 @@
                 <button id="page-prev" onclick="changePage(-1)" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 font-bold disabled:opacity-40">← 上一頁</button>
                 <span id="page-info" class="text-gray-500"></span>
                 <button id="page-next" onclick="changePage(1)" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 font-bold disabled:opacity-40">下一頁 →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上傳題組 Modal -->
+    <div id="upload-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-xl font-bold text-emerald-800">➕ 新增題組</h3>
+                <button onclick="closeUploadModal()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <div class="flex flex-col gap-3">
+                <div>
+                    <label class="text-sm font-bold text-gray-600">題組名稱</label>
+                    <input type="text" id="modal-set-name" placeholder="如：L1 單字" class="w-full p-2 border rounded focus:outline-emerald-500 mt-1">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-gray-600">選擇 CSV 檔案</label>
+                    <div class="flex items-center gap-2 mt-1">
+                        <input type="file" id="modal-csv-file" accept=".csv" class="text-sm flex-1">
+                        <a href="/download_template" class="text-xs text-blue-600 hover:underline shrink-0">📥 範例檔</a>
+                    </div>
+                </div>
+                <button id="modal-upload-btn" onclick="modalUploadCSV()" class="bg-emerald-500 text-white py-2 rounded font-bold hover:bg-emerald-600 mt-1">上傳並開始分析例句</button>
+                <div id="modal-upload-progress" class="hidden">
+                    <div class="flex justify-between text-sm text-gray-500 mb-1">
+                        <span id="modal-progress-label">準備中...</span>
+                        <span id="modal-progress-count"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div id="modal-progress-bar" class="bg-emerald-500 h-3 rounded-full transition-all duration-300" style="width:0%"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -213,6 +249,7 @@
                                 <div class="flex gap-2 flex-wrap">
                                     <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-3 py-1.5 rounded hover:bg-emerald-600 font-bold text-sm">開始練習</button>
                                     <a href="/static/words.html?set_id=${set.id}&name=${encodedName}" class="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 font-bold text-sm">查看</a>
+                                    <a href="/sets/${set.id}/export" class="bg-gray-500 text-white px-3 py-1.5 rounded hover:bg-gray-600 font-bold text-sm">下載</a>
                                     <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
                                 </div>
                             </li>
@@ -409,6 +446,81 @@
             } finally {
                 btn.disabled = false;
                 btn.innerText = "上傳並開始分析例句";
+            }
+        }
+
+        // --- 上傳題組 Modal ---
+        function openUploadModal() {
+            document.getElementById('modal-set-name').value = '';
+            document.getElementById('modal-csv-file').value = '';
+            document.getElementById('modal-upload-progress').classList.add('hidden');
+            document.getElementById('modal-progress-bar').style.width = '0%';
+            document.getElementById('modal-upload-btn').disabled = false;
+            document.getElementById('modal-upload-btn').innerText = '上傳並開始分析例句';
+            document.getElementById('upload-modal').classList.remove('hidden');
+        }
+
+        function closeUploadModal() {
+            document.getElementById('upload-modal').classList.add('hidden');
+        }
+
+        async function modalUploadCSV() {
+            const currentUid = localStorage.getItem('user_id');
+            const name = document.getElementById('modal-set-name').value.trim();
+            const file = document.getElementById('modal-csv-file').files[0];
+            if (!name || !file) return alert('請填寫題組名稱並選擇檔案');
+
+            const btn = document.getElementById('modal-upload-btn');
+            const progressBox = document.getElementById('modal-upload-progress');
+            const progressBar = document.getElementById('modal-progress-bar');
+            const progressLabel = document.getElementById('modal-progress-label');
+            const progressCount = document.getElementById('modal-progress-count');
+
+            btn.disabled = true;
+            btn.innerText = '🚀 上傳中...';
+            progressBox.classList.remove('hidden');
+            progressLabel.innerText = '正在上傳檔案...';
+            progressCount.innerText = '';
+            progressBar.style.width = '0%';
+
+            const fd = new FormData();
+            fd.append('set_name', name);
+            fd.append('file', file);
+
+            try {
+                const res = await fetch(`/upload_csv/${currentUid}`, { method: 'POST', body: fd });
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const data = JSON.parse(line.slice(6));
+                        if (data.error) { alert('上傳發生錯誤：' + data.error); return; }
+                        if (data.done) {
+                            progressBar.style.width = '100%';
+                            progressLabel.innerText = '✅ 完成！';
+                            progressCount.innerText = '';
+                            setTimeout(() => { closeUploadModal(); location.reload(); }, 800);
+                            return;
+                        }
+                        const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+                        progressBar.style.width = pct + '%';
+                        progressLabel.innerText = data.current === 0 ? '正在準備題組...' : `正在處理：${data.word}`;
+                        progressCount.innerText = data.current > 0 ? `${data.current} / ${data.total}` : '';
+                    }
+                }
+            } catch (err) {
+                alert('發生錯誤，請重試。');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '上傳並開始分析例句';
             }
         }
 
