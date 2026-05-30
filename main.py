@@ -1,5 +1,5 @@
-import csv, json, httpx
-from fastapi import FastAPI, Depends, UploadFile, File, Form, Response
+import csv, io, json, os, httpx
+from fastapi import FastAPI, Depends, UploadFile, File, Form, Response, HTTPException
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -65,13 +65,117 @@ def submit_record(user_id: int = Form(...), set_name: str = Form(...), score: st
 def startup_event():
     session = db.SessionLocal()
     try:
-        # 嘗試自動為現有的資料表補上 password 欄位
+        # 補上 password 欄位（相容舊資料）
         session.execute(text("ALTER TABLE users ADD COLUMN password VARCHAR DEFAULT '0000'"))
         session.commit()
     except Exception:
-        session.rollback() # 如果欄位已經存在就會報錯，我們直接忽略即可
+        session.rollback()
+
+    try:
+        # 補上 is_admin 欄位（相容舊資料）
+        session.execute(text("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0"))
+        session.commit()
+    except Exception:
+        session.rollback()
+
+    # 若 admin 帳號不存在則自動建立
+    try:
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin1234")
+        exists = session.query(db.User).filter_by(username="admin").first()
+        if not exists:
+            session.add(db.User(username="admin", password=admin_password, is_admin=1))
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"建立 admin 帳號失敗: {e}")
     finally:
         session.close()
+
+
+# --- 管理者 API ---
+
+def require_admin(dbs: Session, admin_id: int):
+    """驗證請求者是否為 admin，否則拋出 403"""
+    user = dbs.query(db.User).filter_by(id=admin_id, is_admin=1).first()
+    if not user:
+        raise HTTPException(status_code=403, detail="無管理者權限")
+    return user
+
+@app.post("/admin/login")
+def admin_login(username: str = Form(...), password: str = Form(...), dbs: Session = Depends(get_db)):
+    user = dbs.query(db.User).filter_by(username=username).first()
+    if not user or user.password != password or not user.is_admin:
+        return {"status": "error", "message": "帳號或密碼錯誤，或無管理者權限"}
+    return {"status": "success", "admin_id": user.id, "username": user.username}
+
+@app.get("/admin/users")
+def admin_get_users(admin_id: int, dbs: Session = Depends(get_db)):
+    require_admin(dbs, admin_id)
+    users = dbs.query(db.User).order_by(db.User.id).all()
+    return [{"id": u.id, "username": u.username, "is_admin": bool(u.is_admin)} for u in users]
+
+@app.put("/admin/users/{user_id}")
+def admin_update_user(
+    user_id: int,
+    admin_id: int = Form(...),
+    username: str = Form(""),
+    password: str = Form(""),
+    dbs: Session = Depends(get_db)
+):
+    require_admin(dbs, admin_id)
+    user = dbs.query(db.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="找不到使用者")
+    if username.strip():
+        # 確認新名稱沒有被其他人用
+        conflict = dbs.query(db.User).filter_by(username=username.strip()).first()
+        if conflict and conflict.id != user_id:
+            raise HTTPException(status_code=400, detail="此帳號名稱已被使用")
+        user.username = username.strip()
+    if password.strip():
+        user.password = password.strip()
+    dbs.commit()
+    return {"status": "success"}
+
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(user_id: int, admin_id: int, dbs: Session = Depends(get_db)):
+    require_admin(dbs, admin_id)
+    user = dbs.query(db.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="找不到使用者")
+    if user.is_admin:
+        raise HTTPException(status_code=400, detail="不能刪除管理者帳號")
+    # 刪除相關資料
+    sets = dbs.query(db.WordSet).filter_by(owner_id=user_id).all()
+    for s in sets:
+        word_ids = [w.id for w in s.words]
+        if word_ids:
+            dbs.query(db.WrongAnswer).filter(db.WrongAnswer.word_id.in_(word_ids)).delete(synchronize_session=False)
+        dbs.delete(s)
+    dbs.query(db.WrongAnswer).filter_by(user_id=user_id).delete()
+    dbs.query(db.PracticeRecord).filter_by(user_id=user_id).delete()
+    dbs.delete(user)
+    dbs.commit()
+    return {"status": "success"}
+
+@app.post("/admin/users/batch")
+async def admin_batch_create(admin_id: int = Form(...), file: UploadFile = File(...), dbs: Session = Depends(get_db)):
+    require_admin(dbs, admin_id)
+    content = (await file.read()).decode("utf-8-sig").splitlines()
+    reader = csv.DictReader(content)
+    created, skipped = [], []
+    for row in reader:
+        username = str(row.get("username") or "").strip()
+        password = str(row.get("password") or "").strip()
+        if not username or not password:
+            continue
+        if dbs.query(db.User).filter_by(username=username).first():
+            skipped.append(username)
+            continue
+        dbs.add(db.User(username=username, password=password, is_admin=0))
+        created.append(username)
+    dbs.commit()
+    return {"status": "success", "created": created, "skipped": skipped}
 
 # --- 新增 API：取得所有已註冊學生名單 ---
 @app.get("/users")
@@ -439,3 +543,6 @@ def delete_set(set_id: int, dbs: Session = Depends(get_db)):
 
 @app.get("/")
 def read_index(): return FileResponse("static/index.html")
+
+@app.get("/admin")
+def read_admin(): return FileResponse("static/admin.html")

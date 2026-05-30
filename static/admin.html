@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者後台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+<!-- 登入畫面 -->
+<div id="login-screen" class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-sm">
+        <h1 class="text-2xl font-bold text-slate-700 mb-6 text-center">🔐 管理者登入</h1>
+        <div class="space-y-4">
+            <div>
+                <label class="text-sm font-bold text-gray-600">帳號</label>
+                <input type="text" id="login-username" class="w-full p-2 border rounded mt-1 focus:outline-none focus:border-blue-400" placeholder="admin">
+            </div>
+            <div>
+                <label class="text-sm font-bold text-gray-600">密碼</label>
+                <input type="password" id="login-password" class="w-full p-2 border rounded mt-1 focus:outline-none focus:border-blue-400" placeholder="••••••••">
+            </div>
+            <p id="login-error" class="text-red-500 text-sm hidden"></p>
+            <button onclick="doLogin()" class="w-full bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700">登入</button>
+        </div>
+    </div>
+</div>
+
+<!-- 管理後台 -->
+<div id="admin-screen" class="hidden max-w-4xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-700">⚙️ 管理者後台</h1>
+            <p class="text-sm text-slate-500">歡迎，<span id="admin-name"></span></p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="openBatchModal()" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 text-sm">📂 批次新增帳號</button>
+            <button onclick="doLogout()" class="bg-gray-300 text-gray-700 px-4 py-2 rounded font-bold hover:bg-gray-400 text-sm">登出</button>
+        </div>
+    </div>
+
+    <!-- 手動新增單一帳號 -->
+    <div class="bg-white rounded-xl shadow p-5 mb-6">
+        <h2 class="text-lg font-bold text-slate-600 mb-3">➕ 新增單一帳號</h2>
+        <div class="flex gap-3 flex-wrap">
+            <input type="text" id="new-username" placeholder="帳號" class="flex-1 min-w-32 p-2 border rounded focus:outline-none focus:border-blue-400">
+            <input type="text" id="new-password" placeholder="密碼" class="flex-1 min-w-32 p-2 border rounded focus:outline-none focus:border-blue-400">
+            <button onclick="createSingleUser()" class="bg-blue-600 text-white px-5 py-2 rounded font-bold hover:bg-blue-700">新增</button>
+        </div>
+        <p id="single-msg" class="text-sm mt-2 hidden"></p>
+    </div>
+
+    <!-- 使用者列表 -->
+    <div class="bg-white rounded-xl shadow p-5">
+        <h2 class="text-lg font-bold text-slate-600 mb-3">👥 所有帳號</h2>
+        <div id="user-loading" class="text-center py-8 text-gray-400">載入中...</div>
+        <table id="user-table" class="w-full hidden text-sm">
+            <thead>
+                <tr class="bg-slate-100 text-left">
+                    <th class="p-3 rounded-tl">ID</th>
+                    <th class="p-3">帳號</th>
+                    <th class="p-3">身份</th>
+                    <th class="p-3 rounded-tr text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody id="user-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 編輯帳號 Modal -->
+<div id="edit-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <h3 class="text-xl font-bold text-slate-700 mb-4 border-b pb-2">✏️ 修改帳號</h3>
+        <input type="hidden" id="edit-user-id">
+        <div class="space-y-3">
+            <div>
+                <label class="text-sm font-bold text-gray-600">新帳號名稱（留空不修改）</label>
+                <input type="text" id="edit-username" class="w-full p-2 border rounded mt-1 focus:outline-none focus:border-blue-400">
+            </div>
+            <div>
+                <label class="text-sm font-bold text-gray-600">新密碼（留空不修改）</label>
+                <input type="text" id="edit-password" class="w-full p-2 border rounded mt-1 focus:outline-none focus:border-blue-400">
+            </div>
+            <p id="edit-error" class="text-red-500 text-sm hidden"></p>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+            <button onclick="closeEditModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold">取消</button>
+            <button onclick="submitEdit()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold">儲存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批次上傳 Modal -->
+<div id="batch-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <h3 class="text-xl font-bold text-slate-700 mb-2 border-b pb-2">📂 批次新增帳號</h3>
+        <p class="text-sm text-gray-500 mb-4">上傳 CSV 檔，格式：<code class="bg-gray-100 px-1 rounded">username,password</code>，第一行為標題列</p>
+        <div class="mb-4 bg-slate-50 rounded p-3 text-xs text-gray-500 font-mono">
+            username,password<br>
+            student01,1234<br>
+            student02,5678
+        </div>
+        <input type="file" id="batch-file" accept=".csv" class="w-full border rounded p-2 text-sm">
+        <p id="batch-result" class="text-sm mt-3 hidden"></p>
+        <div class="flex justify-end gap-2 mt-5">
+            <button onclick="closeBatchModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-bold">取消</button>
+            <button onclick="submitBatch()" id="batch-submit-btn" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 font-bold">上傳</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let adminId = null;
+
+    async function doLogin() {
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value.trim();
+        const errEl = document.getElementById('login-error');
+        errEl.classList.add('hidden');
+
+        const fd = new FormData();
+        fd.append('username', username);
+        fd.append('password', password);
+        const res = await fetch('/admin/login', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.status !== 'success') {
+            errEl.innerText = data.message;
+            errEl.classList.remove('hidden');
+            return;
+        }
+        adminId = data.admin_id;
+        document.getElementById('admin-name').innerText = data.username;
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('admin-screen').classList.remove('hidden');
+        loadUsers();
+    }
+
+    document.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !document.getElementById('login-screen').classList.contains('hidden')) doLogin();
+    });
+
+    function doLogout() {
+        adminId = null;
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('admin-screen').classList.add('hidden');
+        document.getElementById('login-password').value = '';
+    }
+
+    async function loadUsers() {
+        document.getElementById('user-loading').classList.remove('hidden');
+        document.getElementById('user-table').classList.add('hidden');
+        const res = await fetch(`/admin/users?admin_id=${adminId}`);
+        const users = await res.json();
+        const tbody = document.getElementById('user-tbody');
+        tbody.innerHTML = users.map(u => `
+            <tr class="border-b hover:bg-slate-50">
+                <td class="p-3 text-gray-400">${u.id}</td>
+                <td class="p-3 font-semibold">${escHtml(u.username)}</td>
+                <td class="p-3">
+                    ${u.is_admin
+                        ? '<span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">管理者</span>'
+                        : '<span class="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded">一般使用者</span>'}
+                </td>
+                <td class="p-3 text-right">
+                    ${u.is_admin ? '' : `
+                        <button onclick="openEditModal(${u.id}, '${escHtml(u.username)}')" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs font-bold mr-1">修改</button>
+                        <button onclick="deleteUser(${u.id}, '${escHtml(u.username)}')" class="px-3 py-1 bg-gray-200 text-gray-600 rounded hover:bg-red-500 hover:text-white text-xs font-bold transition">刪除</button>
+                    `}
+                </td>
+            </tr>
+        `).join('');
+        document.getElementById('user-loading').classList.add('hidden');
+        document.getElementById('user-table').classList.remove('hidden');
+    }
+
+    function escHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    async function createSingleUser() {
+        const username = document.getElementById('new-username').value.trim();
+        const password = document.getElementById('new-password').value.trim();
+        const msgEl = document.getElementById('single-msg');
+        msgEl.classList.add('hidden');
+        if (!username || !password) { msgEl.innerText = '帳號和密碼不能空白'; msgEl.className = 'text-sm mt-2 text-red-500'; msgEl.classList.remove('hidden'); return; }
+        const fd = new FormData();
+        fd.append('username', username); fd.append('password', password);
+        const res = await fetch('/register', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.status === 'success') {
+            msgEl.innerText = `✅ 帳號「${username}」建立成功！`;
+            msgEl.className = 'text-sm mt-2 text-emerald-600';
+            document.getElementById('new-username').value = '';
+            document.getElementById('new-password').value = '';
+            loadUsers();
+        } else {
+            msgEl.innerText = `❌ ${data.message}`;
+            msgEl.className = 'text-sm mt-2 text-red-500';
+        }
+        msgEl.classList.remove('hidden');
+    }
+
+    function openEditModal(userId, username) {
+        document.getElementById('edit-user-id').value = userId;
+        document.getElementById('edit-username').value = username;
+        document.getElementById('edit-password').value = '';
+        document.getElementById('edit-error').classList.add('hidden');
+        document.getElementById('edit-modal').classList.remove('hidden');
+    }
+    function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+
+    async function submitEdit() {
+        const userId = document.getElementById('edit-user-id').value;
+        const username = document.getElementById('edit-username').value.trim();
+        const password = document.getElementById('edit-password').value.trim();
+        const errEl = document.getElementById('edit-error');
+        errEl.classList.add('hidden');
+        const fd = new FormData();
+        fd.append('admin_id', adminId);
+        fd.append('username', username);
+        fd.append('password', password);
+        const res = await fetch(`/admin/users/${userId}`, { method: 'PUT', body: fd });
+        if (res.ok) {
+            closeEditModal();
+            loadUsers();
+        } else {
+            const data = await res.json();
+            errEl.innerText = data.detail || '修改失敗';
+            errEl.classList.remove('hidden');
+        }
+    }
+
+    async function deleteUser(userId, username) {
+        if (!confirm(`確定要刪除帳號「${username}」嗎？\n此操作將一併刪除該帳號的所有題組和練習紀錄，且無法復原！`)) return;
+        const res = await fetch(`/admin/users/${userId}?admin_id=${adminId}`, { method: 'DELETE' });
+        if (res.ok) loadUsers();
+        else { const d = await res.json(); alert(d.detail || '刪除失敗'); }
+    }
+
+    function openBatchModal() {
+        document.getElementById('batch-file').value = '';
+        document.getElementById('batch-result').classList.add('hidden');
+        document.getElementById('batch-modal').classList.remove('hidden');
+    }
+    function closeBatchModal() { document.getElementById('batch-modal').classList.add('hidden'); }
+
+    async function submitBatch() {
+        const file = document.getElementById('batch-file').files[0];
+        const resultEl = document.getElementById('batch-result');
+        const btn = document.getElementById('batch-submit-btn');
+        if (!file) { alert('請選擇 CSV 檔案'); return; }
+        btn.innerText = '上傳中...'; btn.disabled = true;
+        const fd = new FormData();
+        fd.append('admin_id', adminId);
+        fd.append('file', file);
+        const res = await fetch('/admin/users/batch', { method: 'POST', body: fd });
+        const data = await res.json();
+        btn.innerText = '上傳'; btn.disabled = false;
+        resultEl.classList.remove('hidden');
+        if (data.status === 'success') {
+            let msg = `✅ 成功建立 ${data.created.length} 個帳號`;
+            if (data.skipped.length) msg += `，跳過已存在的 ${data.skipped.length} 個（${data.skipped.join('、')}）`;
+            resultEl.innerText = msg;
+            resultEl.className = 'text-sm mt-3 text-emerald-600';
+            loadUsers();
+        } else {
+            resultEl.innerText = '上傳失敗，請確認 CSV 格式';
+            resultEl.className = 'text-sm mt-3 text-red-500';
+        }
+    }
+</script>
+</body>
+</html>
