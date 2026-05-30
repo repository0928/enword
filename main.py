@@ -418,7 +418,10 @@ async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile =
             continue
     else:
         content = raw.decode('latin-1').splitlines()  # 最後保底
-    reader = csv.DictReader(content)
+    # 自動偵測分隔符號（Tab 或逗號）
+    sample = content[0] if content else ''
+    delimiter = '\t' if '\t' in sample else ','
+    reader = csv.DictReader(content, delimiter=delimiter)
 
     # 防呆機制：標題轉小寫去空白
     if reader.fieldnames:
