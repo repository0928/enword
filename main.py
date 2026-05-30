@@ -409,7 +409,15 @@ def export_set(set_id: int, dbs: Session = Depends(get_db)):
 
 @app.post("/upload_csv/{user_id}")
 async def upload_csv(user_id: int, set_name: str = Form(...), file: UploadFile = File(...)):
-    content = (await file.read()).decode('utf-8-sig').splitlines()
+    raw = await file.read()
+    for enc in ('utf-8-sig', 'big5', 'cp950', 'latin-1'):
+        try:
+            content = raw.decode(enc).splitlines()
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    else:
+        content = raw.decode('latin-1').splitlines()  # 最後保底
     reader = csv.DictReader(content)
 
     # 防呆機制：標題轉小寫去空白
