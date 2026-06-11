@@ -18,9 +18,24 @@ def get_db():
 
 # --- 新增的 API：檢查是否有錯題 ---
 @app.get("/users/{user_id}/has_wrong")
-def has_wrong(user_id: int, dbs: Session = Depends(get_db)):
-    exists = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).first()
+def has_wrong(user_id: int, set_id: int = None, dbs: Session = Depends(get_db)):
+    q = dbs.query(db.WrongAnswer).filter_by(user_id=user_id)
+    if set_id is not None:
+        q = q.join(db.Word).filter(db.Word.word_set_id == set_id)
+    exists = q.first()
     return {"has_wrong": exists is not None}
+
+@app.get("/users/{user_id}/wrong_set_ids")
+def wrong_set_ids(user_id: int, dbs: Session = Depends(get_db)):
+    """回傳該使用者有錯題的所有題組 ID 列表"""
+    rows = (
+        dbs.query(db.Word.word_set_id)
+        .join(db.WrongAnswer, db.WrongAnswer.word_id == db.Word.id)
+        .filter(db.WrongAnswer.user_id == user_id)
+        .distinct()
+        .all()
+    )
+    return [r[0] for r in rows]
 
 # --- 新增的 API：取得練習紀錄（翻頁 + 60 天過濾）---
 @app.get("/records/{user_id}")
@@ -218,14 +233,20 @@ def get_user_sets(user_id: int, dbs: Session = Depends(get_db)):
     return dbs.query(db.WordSet).filter_by(owner_id=user_id).all()
 
 @app.get("/wrong_answers/{user_id}")
-def get_wrong_answers(user_id: int, dbs: Session = Depends(get_db)):
-    wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).order_by(func.random()).all()
+def get_wrong_answers(user_id: int, set_id: int = None, dbs: Session = Depends(get_db)):
+    q = dbs.query(db.WrongAnswer).filter_by(user_id=user_id)
+    if set_id is not None:
+        q = q.join(db.Word).filter(db.Word.word_set_id == set_id)
+    wrong_records = q.order_by(func.random()).all()
     return [r.word for r in wrong_records]
 
 @app.get("/wrong_answers/{user_id}/list")
-def list_wrong_answers(user_id: int, dbs: Session = Depends(get_db)):
+def list_wrong_answers(user_id: int, set_id: int = None, dbs: Session = Depends(get_db)):
     """查看錯題本（照加入順序，附 word_id 供前端刪除用）"""
-    wrong_records = dbs.query(db.WrongAnswer).filter_by(user_id=user_id).order_by(db.WrongAnswer.id).all()
+    q = dbs.query(db.WrongAnswer).filter_by(user_id=user_id)
+    if set_id is not None:
+        q = q.join(db.Word).filter(db.Word.word_set_id == set_id)
+    wrong_records = q.order_by(db.WrongAnswer.id).all()
     result = []
     for r in wrong_records:
         w = r.word

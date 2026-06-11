@@ -62,7 +62,9 @@ function shuffle(array) {
 async function initQuiz() {
     // 👑 加上時間戳記，強迫瀏覽器每次都抓最新的單字名單
     const timestamp = new Date().getTime();
-    const api = (mode === 'wrong') ? `/wrong_answers/${userId}?t=${timestamp}` : `/quiz/${setId}?t=${timestamp}`;
+    const api = (mode === 'wrong')
+        ? `/wrong_answers/${userId}?t=${timestamp}${setId ? '&set_id='+setId : ''}`
+        : `/quiz/${setId}?t=${timestamp}`;
     const res = await fetch(api);
     let allWords = await res.json();
     

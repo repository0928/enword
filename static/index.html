@@ -219,14 +219,16 @@
 
             try {
                 const ts = new Date().getTime();
-                const [wrongRes, setsRes, recordRes] = await Promise.all([
+                const [wrongRes, setsRes, recordRes, wrongSetsRes] = await Promise.all([
                     fetch(`/users/${currentUid}/has_wrong?t=${ts}`),
                     fetch(`/users/${currentUid}/sets?t=${ts}`),
-                    fetch(`/records/${currentUid}?t=${ts}`)
+                    fetch(`/records/${currentUid}?t=${ts}`),
+                    fetch(`/users/${currentUid}/wrong_set_ids?t=${ts}`)
                 ]);
 
                 const { has_wrong } = await wrongRes.json();
                 const sets = await setsRes.json();
+                const wrongSetIds = new Set(await wrongSetsRes.json());
                 const { records, total, page, total_pages } = await recordRes.json();
                 list.innerHTML = ""; 
 
@@ -246,11 +248,13 @@
                 else {
                     sets.forEach(set => {
                         const encodedName = encodeURIComponent(set.name);
+                        const hasWrong = wrongSetIds.has(set.id);
                         list.innerHTML += `
                             <li class="p-4 border border-emerald-200 rounded flex flex-col sm:flex-row sm:justify-between sm:items-center bg-emerald-50 hover:bg-emerald-100 mb-2 transition shadow-sm gap-3">
                                 <span class="font-bold text-lg">${set.name}</span>
                                 <div class="flex gap-2 flex-wrap">
                                     <button onclick="startPractice(${set.id}, 'normal')" class="bg-emerald-500 text-white px-3 py-1.5 rounded hover:bg-emerald-600 font-bold text-sm">開始練習</button>
+                                    ${hasWrong ? `<button onclick="startPractice(${set.id}, 'wrong')" class="bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 font-bold text-sm">❌ 錯題練習</button>` : ''}
                                     <a href="/static/words.html?set_id=${set.id}&name=${encodedName}" class="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 font-bold text-sm">查看</a>
                                     <a href="/sets/${set.id}/export" class="bg-gray-500 text-white px-3 py-1.5 rounded hover:bg-gray-600 font-bold text-sm">下載</a>
                                     <button onclick="deleteSet(${set.id})" class="bg-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>
@@ -378,7 +382,12 @@
                 if (isNaN(n) || n < 5) return alert("請輸入 'all' 或大於等於 5 的數字。");
                 count = n;
             }
-            window.location.href = `/static/practice.html?count=${count}&${mode === 'wrong' ? 'mode=wrong' : 'set_id='+setId}`;
+            if (mode === 'wrong') {
+                const setParam = setId ? `&set_id=${setId}` : '';
+                window.location.href = `/static/practice.html?count=${count}&mode=wrong${setParam}`;
+            } else {
+                window.location.href = `/static/practice.html?count=${count}&set_id=${setId}`;
+            }
         }
 
         async function uploadCSV() {
