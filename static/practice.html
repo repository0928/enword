@@ -60,16 +60,26 @@ function shuffle(array) {
 }
 
 async function initQuiz() {
-    // 👑 加上時間戳記，強迫瀏覽器每次都抓最新的單字名單
     const timestamp = new Date().getTime();
-    const api = (mode === 'wrong')
-        ? `/wrong_answers/${userId}?t=${timestamp}${setId ? '&set_id='+setId : ''}`
-        : `/quiz/${setId}?t=${timestamp}`;
-    const res = await fetch(api);
-    let allWords = await res.json();
-    
-    // ... 下面保留你原本的程式碼
-    
+    let allWords = [];
+
+    if (mode === 'custom') {
+        // 從 localStorage 取出勾選的 word IDs
+        const ids = localStorage.getItem('custom_word_ids') || '';
+        if (!ids) { alert("沒有選取任何單字！"); window.location.href = "/"; return; }
+        localStorage.removeItem('custom_word_ids'); // 用完即清
+        const fd = new FormData();
+        fd.append('word_ids', ids);
+        const res = await fetch('/quiz/custom', { method: 'POST', body: fd });
+        allWords = await res.json();
+    } else if (mode === 'wrong') {
+        const res = await fetch(`/wrong_answers/${userId}?t=${timestamp}${setId ? '&set_id='+setId : ''}`);
+        allWords = await res.json();
+    } else {
+        const res = await fetch(`/quiz/${setId}?t=${timestamp}`);
+        allWords = await res.json();
+    }
+
     document.getElementById('loading-container').classList.add('hidden');
 
     if (!allWords.length) {
@@ -80,11 +90,12 @@ async function initQuiz() {
 
     allWords = shuffle(allWords);
 
-    if (countReq !== 'all') {
+    // custom 模式直接全練，其他模式依 countReq 截取
+    if (mode === 'custom' || countReq === 'all') {
+        words = allWords;
+    } else {
         const n = parseInt(countReq);
         words = allWords.slice(0, n);
-    } else {
-        words = allWords;
     }
 
     document.getElementById('quiz-container').classList.remove('hidden');

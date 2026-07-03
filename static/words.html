@@ -9,12 +9,22 @@
 <body class="bg-emerald-50 text-emerald-900 font-sans min-h-screen p-6">
 
     <div class="max-w-3xl mx-auto">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center justify-between mb-4">
             <div>
                 <a href="/" class="text-emerald-600 underline text-sm">← 返回首頁</a>
                 <h1 class="text-2xl font-bold text-emerald-700 mt-1">📋 <span id="set-title">題組單字</span></h1>
             </div>
             <button id="add-btn" onclick="openAddModal()" class="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 text-sm">➕ 新增單字</button>
+        </div>
+
+        <!-- 勾選練習工具列（一般題組才顯示） -->
+        <div id="select-toolbar" class="hidden mb-4 p-3 bg-white border border-emerald-200 rounded-lg flex flex-wrap items-center gap-3 shadow-sm">
+            <button onclick="toggleSelectAll()" id="select-all-btn" class="text-sm px-3 py-1.5 bg-emerald-50 border border-emerald-300 rounded hover:bg-emerald-100 font-bold">全選</button>
+            <span class="text-sm text-gray-500">已選取 <span id="selected-count" class="font-bold text-emerald-700">0</span> 題</span>
+            <button onclick="startCustomPractice()" id="practice-selected-btn"
+                class="ml-auto bg-emerald-600 text-white px-4 py-1.5 rounded font-bold hover:bg-emerald-700 text-sm opacity-40 cursor-not-allowed" disabled>
+                ▶ 練習選取的單字
+            </button>
         </div>
 
         <div id="loading" class="text-center py-12 text-gray-400">載入中...</div>
@@ -95,9 +105,10 @@
         } else {
             document.getElementById('set-title').innerText = setName;
             document.title = `${setName} - 單字管理`;
+            document.getElementById('select-toolbar').classList.remove('hidden');
         }
 
-        let wordCache = []; // 存放所有單字資料，避免在 onclick 傳 JSON 引發引號衝突
+        let wordCache = [];
 
         async function loadWords() {
             const api = isWrongMode
@@ -115,27 +126,68 @@
             }
 
             list.innerHTML = wordCache.map((w, i) => {
+                const checkbox = !isWrongMode
+                    ? `<input type="checkbox" class="word-checkbox w-4 h-4 accent-emerald-600 shrink-0 cursor-pointer" data-id="${w.id}" onchange="updateSelection()">`
+                    : '';
                 const actionBtns = isWrongMode
                     ? `<button onclick="removeFromWrong(${w.word_id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">移除</button>`
                     : `<button onclick="openEditModal(${i})" class="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 font-bold text-sm">編輯</button>
                        <button onclick="deleteWord(${w.id}, this)" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-red-500 hover:text-white transition font-bold text-sm">刪除</button>`;
                 return `
-                <div class="bg-white border border-emerald-100 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
-                    <div class="flex-1">
-                        <div class="flex items-baseline gap-2 flex-wrap">
-                            <span class="text-lg font-bold text-gray-800">${w.english}</span>
-                            <span class="text-sm text-emerald-600">${w.part_of_speech || ''}</span>
-                            <span class="text-gray-600">${w.chinese}</span>
+                <div class="bg-white border border-emerald-100 rounded-lg p-4 flex items-center gap-3 shadow-sm">
+                    ${checkbox}
+                    <div class="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div class="flex-1">
+                            <div class="flex items-baseline gap-2 flex-wrap">
+                                <span class="text-lg font-bold text-gray-800">${w.english}</span>
+                                <span class="text-sm text-emerald-600">${w.part_of_speech || ''}</span>
+                                <span class="text-gray-600">${w.chinese}</span>
+                            </div>
+                            ${w.example_sentence ? `<p class="text-sm text-gray-400 mt-1">📖 ${w.example_sentence}</p>` : ''}
                         </div>
-                        ${w.example_sentence ? `<p class="text-sm text-gray-400 mt-1">📖 ${w.example_sentence}</p>` : ''}
+                        <div class="flex gap-2 shrink-0">${actionBtns}</div>
                     </div>
-                    <div class="flex gap-2 shrink-0">${actionBtns}</div>
                 </div>`;
             }).join('');
             list.classList.remove('hidden');
+            updateSelection();
         }
 
-        // 一般題組：刪除單字
+        // --- 勾選邏輯 ---
+        function updateSelection() {
+            const checked = document.querySelectorAll('.word-checkbox:checked');
+            const total = document.querySelectorAll('.word-checkbox');
+            const count = checked.length;
+            document.getElementById('selected-count').innerText = count;
+            const btn = document.getElementById('practice-selected-btn');
+            if (count > 0) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-40', 'cursor-not-allowed');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('opacity-40', 'cursor-not-allowed');
+            }
+            // 更新全選按鈕文字
+            const allBtn = document.getElementById('select-all-btn');
+            allBtn.innerText = (count === total.length && total.length > 0) ? '取消全選' : '全選';
+        }
+
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.word-checkbox');
+            const allChecked = [...checkboxes].every(c => c.checked);
+            checkboxes.forEach(c => c.checked = !allChecked);
+            updateSelection();
+        }
+
+        function startCustomPractice() {
+            const checked = document.querySelectorAll('.word-checkbox:checked');
+            if (!checked.length) return;
+            const ids = [...checked].map(c => c.dataset.id);
+            localStorage.setItem('custom_word_ids', ids.join(','));
+            window.location.href = `/static/practice.html?mode=custom`;
+        }
+
+        // --- 一般題組：刪除單字 ---
         async function deleteWord(wordId, btn) {
             if (!confirm('確定要刪除這個單字嗎？')) return;
             btn.disabled = true;
@@ -144,7 +196,7 @@
             else { alert('刪除失敗'); btn.disabled = false; }
         }
 
-        // 錯題本：移除單字
+        // --- 錯題本：移除單字 ---
         async function removeFromWrong(wordId, btn) {
             if (!confirm('確定要從錯題本移除這個單字嗎？')) return;
             btn.disabled = true;
@@ -153,7 +205,7 @@
             else { alert('移除失敗'); btn.disabled = false; }
         }
 
-        // 新增單字（一般題組用）
+        // --- 新增單字 ---
         function openAddModal() {
             document.getElementById('add-en').value = '';
             document.getElementById('add-zh').value = '';
@@ -180,7 +232,7 @@
             btn.innerText = '儲存單字'; btn.disabled = false;
         }
 
-        // 編輯單字（一般題組用）
+        // --- 編輯單字 ---
         function openEditModal(index) {
             const word = wordCache[index];
             document.getElementById('edit-word-id').value = word.id;

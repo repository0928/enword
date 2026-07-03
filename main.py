@@ -278,8 +278,15 @@ def remove_wrong_answer(user_id: int, word_id: int, dbs: Session = Depends(get_d
 
 @app.get("/quiz/{set_id}")
 def get_quiz(set_id: int, dbs: Session = Depends(get_db)):
-    # 👑 加上 .order_by(func.random())，讓資料庫直接把這 45 題徹底洗牌再回傳
     return dbs.query(db.Word).filter_by(word_set_id=set_id).order_by(func.random()).all()
+
+@app.post("/quiz/custom")
+def get_custom_quiz(word_ids: str = Form(...), dbs: Session = Depends(get_db)):
+    """接收逗號分隔的 word ID，回傳對應單字（順序隨機）"""
+    ids = [int(i) for i in word_ids.split(',') if i.strip().isdigit()]
+    if not ids:
+        return []
+    return dbs.query(db.Word).filter(db.Word.id.in_(ids)).order_by(func.random()).all()
 
 @app.post("/submit_answer")
 def submit_answer(user_id: int = Form(...), word_id: int = Form(...), is_correct: str = Form(...), session_id: str = Form(""), user_answer: str = Form(""), dbs: Session = Depends(get_db)):
